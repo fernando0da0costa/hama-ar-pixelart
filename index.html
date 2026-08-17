@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Hama AR — Monte contas no ar</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header id="setupScreen">
+  <div class="wrap">
+    <span class="eyebrow">RA · MÃOS · CONTAS</span>
+    <h1>Escolha um <span>desenho</span> pra montar</h1>
+    <p>Toca numa forminha, depois aperta "Montar no ar" — e usa a mãozinha pra
+    encaixar as continhas na cor certa, flutuando bem na tua frente!</p>
+
+    <div class="app">
+      <div class="panel">
+        <h2>01 · Escolha uma forma</h2>
+        <div class="shape-grid" id="shapeGrid"></div>
+
+        <details class="advanced">
+          <summary>Quero usar uma foto minha</summary>
+
+          <label class="drop" id="dropZone">
+            <input type="file" id="fileInput" accept="image/*">
+            <div id="dropLabel">Clique ou arraste uma imagem aqui</div>
+          </label>
+
+          <label class="bg-toggle">
+            <input type="checkbox" id="removeBgToggle">
+            <span>Isolar objeto (remover fundo automaticamente)</span>
+          </label>
+          <div class="hint" id="removeBgStatus">Baixa um modelo leve na primeira vez (roda local no navegador, sem enviar a imagem pra nenhum servidor).</div>
+
+          <h2>Imagem original</h2>
+          <div class="original-wrap" id="originalWrap">
+            <div class="crop-empty" id="originalEmpty">A amostra da imagem original aparece aqui.</div>
+            <img id="originalSample" style="display:none;" alt="Imagem original">
+          </div>
+          <div class="hint" id="originalDims"></div>
+
+          <h2 style="margin-top:20px;">Área de recorte</h2>
+          <div class="crop-wrap" id="cropWrap">
+            <div class="crop-empty" id="cropEmpty">Envie uma imagem pra escolher o pedaço que quer usar.</div>
+            <canvas id="cropCanvas" style="display:none;"></canvas>
+          </div>
+          <div class="hint">Arraste pra desenhar a área. Puxe os cantos pra ajustar o tamanho, ou arraste o meio pra mover.</div>
+          <button class="secondary" id="resetCropBtn">Usar imagem inteira</button>
+
+          <h2 style="margin-top:20px;">Resolução</h2>
+          <div class="field">
+            <label>Resolução da grade <b id="resolutionVal">12×12</b></label>
+            <input type="range" id="resolutionSlider" min="5" max="24" value="12">
+            <div class="hint">Em RA, quanto menor a grade, mais fácil de rastrear e montar com a mão. Recomendado até 16×16.</div>
+          </div>
+          <div class="field">
+            <label>Largura × Altura (em contas)</label>
+            <div class="dims">
+              <input type="number" id="gridW" min="5" max="24" value="12">
+              <input type="number" id="gridH" min="5" max="24" value="12">
+            </div>
+            <div class="presets">
+              <button data-w="8" data-h="8">8×8</button>
+              <button data-w="10" data-h="10">10×10</button>
+              <button data-w="12" data-h="12">12×12</button>
+              <button data-w="16" data-h="16">16×16</button>
+            </div>
+          </div>
+
+          <h2>Cores</h2>
+          <div class="field">
+            <label>Nº de cores <b id="colorsVal">8</b></label>
+            <input type="range" id="colorsCount" min="2" max="16" value="8">
+            <div class="hint">Menos cores = mais fácil de achar o pino certo na paleta flutuante da RA.</div>
+          </div>
+          <div class="field">
+            <label>Simplificar tons <b id="simplifyVal">0%</b></label>
+            <input type="range" id="simplifyTolerance" min="0" max="100" value="0">
+          </div>
+          <div class="field">
+            <label>Paleta</label>
+            <select id="paletteMode">
+              <option value="hama" selected>Padrão Hama/Perler (fixa, 24 cores)</option>
+              <option value="auto">Automática (cores da imagem)</option>
+            </select>
+          </div>
+        </details>
+
+        <button class="secondary" id="downloadBtn" disabled>Baixar prévia (PNG)</button>
+        <button class="primary" id="enterArBtn" disabled>Montar no ar</button>
+        <div class="hint" id="arSupportMsg"></div>
+      </div>
+
+      <div class="canvas-wrap" id="canvasWrap">
+        <div class="empty" id="emptyState">Escolhe uma forminha aí do lado<br>pra ver o <b>desenho de continhas</b>.</div>
+        <canvas id="canvas" style="display:none;"></canvas>
+      </div>
+    </div>
+
+    <div class="meta" id="metaInfo"></div>
+
+    <div class="legend" id="legendPanel">
+      <h2>Legenda · quantas contas de cada cor</h2>
+      <div class="legend-grid" id="legendGrid"></div>
+    </div>
+  </div>
+</header>
+
+<!-- Tela de RA: fica escondida até a sessão WebXR começar. O canvas do
+     three.js é inserido aqui dinamicamente. O overlay é HTML normal
+     renderizado por cima do vídeo da câmera via dom-overlay. -->
+<div id="arScreen" hidden>
+  <div id="arOverlay">
+    <div id="arHud">
+      <div id="arProgress">0 / 0 contas</div>
+      <div id="arHint">Toca numa mesa ou no chão pra pendurar o desenho</div>
+    </div>
+    <button id="exitArBtn">Sair da RA</button>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
