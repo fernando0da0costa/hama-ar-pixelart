@@ -3,12 +3,14 @@
 // nativo do WebXR (XRHand) pra "pegar" contas de uma paleta flutuante e
 // "encaixar" no quadro, célula a célula.
 //
-// Requisito de hardware: navegador com suporte a immersive-ar + hand-tracking.
-// Hoje isso é, na prática, o Meta Quest Browser (Quest 2/3/Pro) com
-// rastreamento de mão ativado nas configurações do sistema. A maioria dos
-// navegadores WebXR em celular (Chrome/ARCore) tem immersive-ar mas SEM
-// hand-tracking real — nesse caso o app cai pro modo alternativo (ver
-// startAR: handTrackingAvailable) usando toque na tela como substituto.
+// Requisito de hardware pra interagir de verdade (pegar/encaixar contas):
+// navegador com suporte a immersive-ar + hand-tracking. Hoje isso é, na
+// prática, o Meta Quest Browser (Quest 2/3/Pro) com rastreamento de mão
+// ativado nas configurações do sistema. A maioria dos navegadores WebXR em
+// celular (Chrome/ARCore) tem immersive-ar (fixa o quadro via hit-test) mas
+// SEM hand-tracking real — o app detecta isso sozinho (ver anyRealHandSeen
+// em onXRFrame) e avisa que esse aparelho não vai conseguir montar o
+// desenho neste modo, sugerindo "Simular sem RA".
 
 import * as THREE from 'three';
 import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
@@ -26,6 +28,9 @@ let hitTestSource = null;
 let hitTestSourceRequested = false;
 let hitTestStartedAt = null; // performance.now() de quando o hitTestSource ficou pronto, pra medir "há quanto tempo procurando sem achar nada"
 let hitTestHintStage = 0; // 0 = dica inicial, 1 = já escalou pra dica de "ainda não achei", evita ficar re-escrevendo a cada frame
+let anyRealHandSeen = false; // true assim que alguma junta de verdade (thumb-tip/index-finger-tip) aparecer visível
+let boardPlacedAt = null;
+let handHintStage = 0; // 0 = dica normal, 1 = já avisou que não achou rastreamento de mão
 let reticle;
 let boardGroup = null;
 let boardPlaced = false;
@@ -36,6 +41,15 @@ let cellMeshes = []; // { ghost, bead, filled, correct, targetLegendIdx }
 let paletteSpheres = []; // { mesh, legendIdx }
 let handStates = [null, null]; // { pinching, heldLegendIdx, previewMesh }
 let completed = false; // trava o som de conclusão pra não repetir a cada frame depois que já bateu 100%
+
+// Toque como substituto da pinça — só entra em ação quando não há rastreamento
+// de mão real (anyRealHandSeen), pra não disparar duas vezes num Quest, onde
+// o próprio pinçar da mão já gera um evento 'select' nativo. Mecânica de dois
+// toques: 1º toque numa conta da paleta seleciona a cor (ela aumenta um
+// pouco, tipo destaque); 2º toque num furo encaixa a cor selecionada ali.
+const tapRaycaster = new THREE.Raycaster();
+let tapHeldLegendIdx = null;
+let tapSelectedMesh = null;
 
 let callbacks = { onProgress: () => {}, onExit: () => {}, onHint: () => {} };
 
@@ -100,29 +114,23 @@ export async function startAR(patternData, cbs, container) {
   session.addEventListener('end', onSessionEnd);
   session.addEventListener('select', onSelect);
 
-  const handTrackingAvailable = sessionSupportsHandTracking(session);
-  callbacks.onHint(
-    handTrackingAvailable
-      ? 'Mova o celular devagar apontando pro chão ou uma mesa — o anel de mira aparece quando achar uma superfície'
-      : 'Rastreamento de mão indisponível — toque na tela funciona como cursor de apontar/selecionar',
-  );
+  // Não dá pra saber com certeza se tem rastreamento de mão de verdade antes
+  // de alguma junta aparecer — a dica otimista aqui pode ser corrigida
+  // depois (ver o aviso de "não detectei rastreamento" em onXRFrame).
+  callbacks.onHint('Mova o celular devagar apontando pro chão ou uma mesa — o anel de mira aparece quando achar uma superfície');
   hitTestStartedAt = null;
   hitTestHintStage = 0;
+  anyRealHandSeen = false;
+  boardPlacedAt = null;
+  handHintStage = 0;
+  tapHeldLegendIdx = null;
+  tapSelectedMesh = null;
 
   setupHands();
 
   hitTestSourceRequested = false;
 
   renderer.setAnimationLoop((timestamp, frame) => onXRFrame(frame));
-}
-
-function sessionSupportsHandTracking(sess) {
-  for (const src of sess.inputSources) {
-    if (src.hand) return true;
-  }
-  // Ainda não dá pra saber com certeza antes de mãos conectarem; assume
-  // otimista e corrige no primeiro frame se joints nunca aparecerem.
-  return true;
 }
 
 function setupHands() {
@@ -147,6 +155,13 @@ function setupHands() {
     indexMarker.visible = false;
     pincerLine.visible = false;
     scene.add(thumbMarker, indexMarker, pincerLine);
+
+    // A maioria dos navegadores WebXR em celular (Chrome/ARCore) tem
+    // immersive-ar mas SEM XRHand de verdade — sem esconder isso, a "luva"
+    // 3D fica parada, tipo fantasma, no lugar onde a sessão começou, porque
+    // nunca recebe pose de junta nenhuma pra seguir. Só liga quando
+    // confirmarmos rastreamento real (ver updateHandInteraction).
+    hand.userData.handModel.visible = false;
 
     handStates[i] = {
       pinching: false, heldLegendIdx: null, previewMesh: null, hand,
@@ -205,12 +220,77 @@ async function onXRFrame(frame) {
 
   updateHandInteraction(frame, refSpace);
 
+  // Depois de fixar o quadro, se nunca chegou nenhuma junta de mão de
+  // verdade num tempo razoável, avisa em vez de deixar a pessoa pinçando no
+  // vazio sem saber por quê — celular comum (Chrome/ARCore) quase nunca tem
+  // esse sensor, é limitação do aparelho, não bug.
+  if (boardPlaced && !anyRealHandSeen && handHintStage === 0
+    && boardPlacedAt && performance.now() - boardPlacedAt > 4000) {
+    handHintStage = 1;
+    callbacks.onHint('Não detectei rastreamento de mão neste aparelho (comum em celular — só funciona bem em headsets como Quest). Toque numa conta da paleta pra escolher a cor, depois toque no furo certo pra encaixar.');
+  }
+
   renderer.render(scene, camera);
 }
 
-function onSelect() {
-  if (boardPlaced || !reticle.visible) return;
-  placeBoard(reticle.matrix);
+function onSelect(event) {
+  if (!boardPlaced) {
+    if (reticle.visible) placeBoard(reticle.matrix);
+    return;
+  }
+  // Depois do quadro fixado, um toque só vira interação de pegar/encaixar se
+  // não há mão de verdade sendo rastreada — num Quest, o próprio pinçar da
+  // mão já dispara 'select' nativamente, e updateHandInteraction já cuida
+  // disso; tratar aqui de novo duplicaria a ação.
+  if (anyRealHandSeen) return;
+  handleTapSelect(event);
+}
+
+// Toque como substituto da pinça quando não há XRHand real (a maioria dos
+// celulares). Lança um raio a partir da pose do toque: se acertar uma conta
+// da paleta, seleciona aquela cor (1º toque); se já tiver uma cor
+// selecionada e acertar um furo, encaixa ali (2º toque).
+function handleTapSelect(event) {
+  const refSpace = renderer.xr.getReferenceSpace();
+  const pose = event.frame.getPose(event.inputSource.targetRaySpace, refSpace);
+  if (!pose) return;
+
+  const m = new THREE.Matrix4().fromArray(pose.transform.matrix);
+  const origin = new THREE.Vector3().setFromMatrixPosition(m);
+  const direction = new THREE.Vector3(0, 0, -1).transformDirection(m);
+  tapRaycaster.set(origin, direction);
+
+  const paletteHits = tapRaycaster.intersectObjects(paletteSpheres.map((p) => p.mesh));
+  if (paletteHits.length > 0) {
+    const picked = paletteSpheres.find((p) => p.mesh === paletteHits[0].object);
+    selectTapColor(picked);
+    return;
+  }
+
+  if (tapHeldLegendIdx === null) return;
+  const ghosts = cellMeshes.filter(Boolean).map((c) => c.ghost);
+  const cellHits = tapRaycaster.intersectObjects(ghosts);
+  if (cellHits.length > 0) {
+    const cell = cellMeshes.find((c) => c && c.ghost === cellHits[0].object);
+    if (cell) {
+      fillCell(cell, tapHeldLegendIdx);
+      clearTapSelection();
+    }
+  }
+}
+
+function selectTapColor(picked) {
+  if (tapSelectedMesh) tapSelectedMesh.scale.setScalar(1);
+  tapHeldLegendIdx = picked.legendIdx;
+  tapSelectedMesh = picked.mesh;
+  picked.mesh.scale.setScalar(1.35);
+  callbacks.onHint(`Cor selecionada: ${picked.entry.name} — toque no furo certo pra encaixar`);
+}
+
+function clearTapSelection() {
+  if (tapSelectedMesh) tapSelectedMesh.scale.setScalar(1);
+  tapSelectedMesh = null;
+  tapHeldLegendIdx = null;
 }
 
 function placeBoard(matrix) {
@@ -219,6 +299,7 @@ function placeBoard(matrix) {
   boardGroup.matrix.copy(matrix);
   scene.add(boardGroup);
   boardPlaced = true;
+  boardPlacedAt = performance.now();
   reticle.visible = false;
 
   buildBoard();
@@ -308,6 +389,12 @@ function updateHandInteraction(frame, refSpace) {
       state.pincerLine.visible = false;
       continue;
     }
+
+    // Chegou aqui pelo menos uma vez = juntas de verdade sendo lidas —
+    // agora sim pode mostrar a "luva" 3D, que vai seguir a mão de verdade
+    // (antes disso ela ficava escondida, ver setupHands).
+    if (!hand.userData.handModel.visible) hand.userData.handModel.visible = true;
+    anyRealHandSeen = true;
 
     const thumbTip = joints['thumb-tip'].position;
     const indexTip = joints['index-finger-tip'].position;
