@@ -1,7 +1,9 @@
 import { computePattern, nameForColor } from './pattern.js';
 import { isArSupported, startAR, exitAR } from './ar-scene.js';
-import { isWebcamSupported, startWebcam, exitWebcam } from './webcam-scene.js';
+import { isWebcamSupported, startWebcam, exitWebcam, flipCamera } from './webcam-scene.js';
 import { SHAPES } from './shapes.js';
+import { primeAudio } from './sound.js';
+import { isCompleted, markCompleted } from './progress.js';
 
 const fileInput = document.getElementById('fileInput');
 const dropZone = document.getElementById('dropZone');
@@ -20,7 +22,8 @@ const simplifyTolerance = document.getElementById('simplifyTolerance');
 const simplifyVal = document.getElementById('simplifyVal');
 const paletteMode = document.getElementById('paletteMode');
 const downloadBtn = document.getElementById('downloadBtn');
-const enterArBtn = document.getElementById('enterArBtn');
+const enterArRealBtn = document.getElementById('enterArRealBtn');
+const enterSimBtn = document.getElementById('enterSimBtn');
 const arSupportMsg = document.getElementById('arSupportMsg');
 const metaInfo = document.getElementById('metaInfo');
 const legendPanel = document.getElementById('legendPanel');
@@ -42,12 +45,38 @@ const arScreen = document.getElementById('arScreen');
 const arProgress = document.getElementById('arProgress');
 const arHint = document.getElementById('arHint');
 const exitArBtn = document.getElementById('exitArBtn');
+const flipCameraBtn = document.getElementById('flipCameraBtn');
+const challengeToggle = document.getElementById('challengeToggle');
+const arLevel = document.getElementById('arLevel');
 
 let originalImage = null;
 let dispScale = 1;
-let activeMode = null; // 'ar' | 'webcam' | null
+let activeMode = null; // 'ar' | 'webcam' | null — setado quando um dos dois botões é clicado
+let arSupported = false;
+let simSupported = false;
 let crop = { x: 0, y: 0, w: 0, h: 0 };
 let currentPattern = null;
+
+// Cada botão só liga se (a) o aparelho suporta aquele modo e (b) já existe
+// um padrão escolhido — chamado sempre que um dos dois muda.
+function updateEnterButtons() {
+  enterArRealBtn.disabled = !arSupported || !currentPattern;
+  enterSimBtn.disabled = !simSupported || !currentPattern;
+}
+
+// Modo desafio: das formas prontas (SHAPES), ordenadas da mais fácil pra
+// mais difícil pelo número de contas, e avança pra próxima sozinho quando
+// o desenho atual é completado 100% certo.
+const challengeOrder = [...SHAPES].sort((a, b) => a.totalBeads - b.totalBeads);
+let challengeMode = false;
+let challengeIndex = 0;
+let advancingChallenge = false;
+
+function updateChallengeUI() {
+  arLevel.textContent = challengeMode
+    ? `Nível ${challengeIndex + 1} de ${challengeOrder.length} · ${challengeOrder[challengeIndex].name}`
+    : '';
+}
 
 function updateLabels() {
   colorsVal.textContent = colorsCount.value;
@@ -188,7 +217,16 @@ resetCropBtn.addEventListener('click', () => {
   render();
 });
 
-function applyPattern(p) {
+function applyPattern(p, { fromChallenge = false } = {}) {
+  // Qualquer escolha manual de forma/foto cancela o modo desafio — ele só
+  // faz sentido guiando a sequência sozinho; se o usuário escolheu outra
+  // coisa, é porque não quer mais seguir a sequência automática.
+  if (!fromChallenge && challengeMode) {
+    challengeMode = false;
+    challengeToggle.checked = false;
+    updateChallengeUI();
+  }
+
   currentPattern = p;
 
   drawPreview(p);
@@ -197,7 +235,7 @@ function applyPattern(p) {
   canvas.style.display = 'block';
   emptyState.style.display = 'none';
   downloadBtn.disabled = false;
-  enterArBtn.disabled = !activeMode;
+  updateEnterButtons();
 
   metaInfo.innerHTML =
     '<span>Grade: <b>' + p.w + '×' + p.h + '</b></span>' +
@@ -246,16 +284,40 @@ function makeThumbnail(p, size) {
   return thumb;
 }
 
+const SHAPE_GRID_SIZE = 6;
+
+// Sorteia n itens distintos de arr (Fisher-Yates parcial) — usado pra
+// mostrar só uma amostra pequena das 36 formas de cada vez, em vez da grade
+// inteira, e trocar a cada carregamento da tela.
+function pickRandomSubset(arr, n) {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, n);
+}
+
 function buildShapeGrid() {
   const shapeGrid = document.getElementById('shapeGrid');
   shapeGrid.innerHTML = '';
   const buttons = [];
 
-  SHAPES.forEach((shape) => {
+  pickRandomSubset(SHAPES, SHAPE_GRID_SIZE).forEach((shape) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'shape-btn';
-    btn.appendChild(makeThumbnail(shape, 64));
+    btn.dataset.shapeName = shape.name;
+
+    const thumbWrap = document.createElement('div');
+    thumbWrap.className = 'thumb-wrap';
+    thumbWrap.appendChild(makeThumbnail(shape, 64));
+    const badge = document.createElement('span');
+    badge.className = 'done-badge';
+    badge.textContent = '✓';
+    thumbWrap.appendChild(badge);
+    btn.appendChild(thumbWrap);
+
     const label = document.createElement('span');
     label.textContent = shape.name;
     btn.appendChild(label);
@@ -268,8 +330,20 @@ function buildShapeGrid() {
     buttons.push(btn);
   });
 
-  // Já entra com a primeira forma escolhida — zero passos até ter algo pra ver.
-  if (buttons.length) buttons[0].click();
+  refreshShapeBadges();
+
+  // Já entra com uma forma aleatória escolhida — zero passos até ter algo pra
+  // ver, e dá variedade a cada visita (senão seria sempre o Coração primeiro).
+  if (buttons.length) buttons[Math.floor(Math.random() * buttons.length)].click();
+}
+
+// Marca com ✓ as formas já completadas antes (progress.js/localStorage) —
+// chamado de novo toda vez que uma forma é concluída, pra atualizar sem
+// precisar reconstruir a grade inteira.
+function refreshShapeBadges() {
+  document.querySelectorAll('.shape-btn').forEach((btn) => {
+    btn.classList.toggle('completed', isCompleted(btn.dataset.shapeName));
+  });
 }
 
 function drawPreview(p) {
@@ -419,57 +493,139 @@ window.addEventListener('resize', () => {
 });
 
 // ------------------------------------------------------------------ //
-// RA / webcam — usa RA de verdade (WebXR) se o aparelho suportar; senão
-// cai pro modo webcam comum (mesma interação de pinça, só que 2D e sem
-// ancoragem no mundo real). O botão e a mensagem se ajustam sozinhos.
+// RA ou simulação — dois botões independentes em vez de escolha automática:
+// "Usar Realidade Aumentada" exige WebXR immersive-ar de verdade (Quest
+// Browser ou celular com ARCore+WebXR); "Simular sem RA" é a webcam comum
+// (mesma interação de pinça, só que 2D e sem ancoragem no mundo real), útil
+// mesmo em aparelhos que TÊM suporte a RA, pra testar sem headset.
 // ------------------------------------------------------------------ //
 
 (async () => {
-  if (await isArSupported()) {
-    activeMode = 'ar';
-    enterArBtn.textContent = 'Montar no ar';
-    arSupportMsg.textContent = 'RA imersiva disponível — o quadro vai ficar fixado no mundo real.';
-  } else if (isWebcamSupported()) {
-    activeMode = 'webcam';
-    enterArBtn.textContent = 'Montar com a câmera';
-    arSupportMsg.textContent = 'RA imersiva (Quest/celular) não disponível aqui — usando a webcam comum pra testar.';
+  arSupported = await isArSupported();
+  simSupported = isWebcamSupported();
+
+  if (arSupported && simSupported) {
+    arSupportMsg.textContent = 'RA imersiva disponível — "Usar Realidade Aumentada" fixa o quadro no mundo real. "Simular sem RA" abre a versão de teste pela câmera comum, sem precisar de headset.';
+  } else if (arSupported) {
+    arSupportMsg.textContent = 'RA imersiva disponível, mas este navegador não tem acesso à câmera comum pro modo de simulação.';
+  } else if (simSupported) {
+    // Sem RA de verdade, o botão de RA desabilitado (cinza) só atrapalha —
+    // some com ele e deixa o Simular como a opção óbvia e chamativa.
+    enterArRealBtn.hidden = true;
+    enterSimBtn.classList.remove('secondary');
+    enterSimBtn.classList.add('primary', 'cta-pulse');
+    arSupportMsg.textContent = 'Este aparelho não tem RA imersiva (precisa de Quest ou celular com WebXR) — use "Simular sem RA" pela webcam comum.';
   } else {
-    activeMode = null;
-    enterArBtn.disabled = true;
     arSupportMsg.textContent = 'Este navegador não tem câmera nem suporte a RA imersiva.';
   }
-  if (activeMode && currentPattern) enterArBtn.disabled = false;
+
+  updateEnterButtons();
 })();
 
 buildShapeGrid();
 
-enterArBtn.addEventListener('click', async () => {
-  if (!currentPattern || !activeMode) return;
+challengeToggle.addEventListener('change', () => {
+  challengeMode = challengeToggle.checked;
+  if (challengeMode) {
+    challengeIndex = 0;
+    const doneCount = challengeOrder.filter((s) => isCompleted(s.name)).length;
+    if (doneCount > 0) {
+      const resume = confirm(
+        `Você já completou ${doneCount} de ${challengeOrder.length} níveis antes. Continuar de onde parou?`
+        + '\n\n"OK" continua no próximo nível não feito. "Cancelar" recomeça do nível 1.',
+      );
+      if (resume) {
+        const nextIdx = challengeOrder.findIndex((s) => !isCompleted(s.name));
+        challengeIndex = nextIdx === -1 ? 0 : nextIdx; // -1 = já completou tudo, recomeça do 1
+      }
+    }
+    document.querySelectorAll('.shape-btn.selected').forEach((b) => b.classList.remove('selected'));
+    applyPattern(challengeOrder[challengeIndex], { fromChallenge: true });
+  }
+  updateChallengeUI();
+});
+
+function makeSceneCallbacks() {
+  return {
+    onProgress: (placed, correct, total) => {
+      arProgress.textContent = `${placed} / ${total} contas · ${correct} corretas`;
+      if (total > 0 && correct === total && currentPattern?.name) {
+        markCompleted(currentPattern.name);
+        refreshShapeBadges();
+      }
+      if (challengeMode && !advancingChallenge && total > 0 && correct === total) {
+        advanceChallenge();
+      }
+    },
+    onHint: (text) => { arHint.textContent = text; },
+    onExit: () => {
+      // Durante o avanço automático de nível, o próprio advanceChallenge já
+      // controla a troca de tela — não deixa esse onExit (disparado pela
+      // saída/reentrada da sessão) voltar pra tela de configuração no meio.
+      if (advancingChallenge) return;
+      setupScreen.hidden = false;
+      arScreen.hidden = true;
+    },
+  };
+}
+
+async function enterMode(mode) {
+  if (!currentPattern || !mode) return;
+  activeMode = mode;
+  primeAudio(); // precisa ser chamado a partir de um clique de verdade pra destravar o áudio
   const start = activeMode === 'ar' ? startAR : startWebcam;
   try {
     setupScreen.hidden = true;
     arScreen.hidden = false;
-    await start(currentPattern, {
-      onProgress: (placed, correct, total) => {
-        arProgress.textContent = `${placed} / ${total} contas · ${correct} corretas`;
-      },
-      onHint: (text) => { arHint.textContent = text; },
-      onExit: () => {
-        setupScreen.hidden = false;
-        arScreen.hidden = true;
-      },
-    }, arScreen);
+    // Trocar de câmera (frontal/traseira) só faz sentido no modo webcam —
+    // em RA imersiva (WebXR) é o próprio sistema do headset/celular que
+    // controla a câmera de passagem, sem essa escolha.
+    flipCameraBtn.hidden = activeMode !== 'webcam';
+    await start(currentPattern, makeSceneCallbacks(), arScreen);
   } catch (err) {
     console.error('Falha ao iniciar:', err);
     alert('Não foi possível iniciar: ' + err.message);
     setupScreen.hidden = false;
     arScreen.hidden = true;
   }
-});
+}
+
+// Ao completar um nível no modo desafio: sai da sessão atual, carrega o
+// próximo desenho (mais difícil) e entra de novo automaticamente. Reaproveita
+// o mesmo start/exit que o botão usa, em vez de tentar trocar o padrão com a
+// sessão viva — mais simples e reaproveita tudo que já existe.
+async function advanceChallenge() {
+  advancingChallenge = true;
+  const isLast = challengeIndex >= challengeOrder.length - 1;
+  if (isLast) {
+    arHint.textContent = 'Você completou todos os níveis! 🎉';
+    advancingChallenge = false;
+    return;
+  }
+  arHint.textContent = 'Nível concluído! Preparando o próximo...';
+  await new Promise((resolve) => setTimeout(resolve, 1800));
+
+  challengeIndex++;
+  applyPattern(challengeOrder[challengeIndex], { fromChallenge: true });
+  updateChallengeUI();
+
+  if (activeMode === 'ar') await exitAR();
+  else exitWebcam();
+
+  advancingChallenge = false; // precisa cair antes do enterMode reengatar makeSceneCallbacks
+  await enterMode(activeMode); // mantém o mesmo modo (RA ou simulação) do nível anterior
+}
+
+enterArRealBtn.addEventListener('click', () => enterMode('ar'));
+enterSimBtn.addEventListener('click', () => enterMode('webcam'));
 
 exitArBtn.addEventListener('click', () => {
   if (activeMode === 'ar') exitAR();
   else if (activeMode === 'webcam') exitWebcam();
+});
+
+flipCameraBtn.addEventListener('click', () => {
+  if (activeMode === 'webcam') flipCamera();
 });
 
 updateLabels();

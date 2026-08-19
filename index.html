@@ -17,8 +17,17 @@
 
     <div class="app">
       <div class="panel">
+        <button class="primary" id="enterArRealBtn" disabled>🥽 Usar Realidade Aumentada</button>
+        <button class="secondary" id="enterSimBtn" disabled>💻 Simular sem RA (câmera)</button>
+        <div class="hint" id="arSupportMsg" style="margin-bottom:18px;"></div>
+
         <h2>01 · Escolha uma forma</h2>
         <div class="shape-grid" id="shapeGrid"></div>
+
+        <label class="bg-toggle">
+          <input type="checkbox" id="challengeToggle">
+          <span>Modo desafio: começa fácil e a dificuldade vai aumentando a cada acerto</span>
+        </label>
 
         <details class="advanced">
           <summary>Quero usar uma foto minha</summary>
@@ -89,8 +98,6 @@
         </details>
 
         <button class="secondary" id="downloadBtn" disabled>Baixar prévia (PNG)</button>
-        <button class="primary" id="enterArBtn" disabled>Montar no ar</button>
-        <div class="hint" id="arSupportMsg"></div>
       </div>
 
       <div class="canvas-wrap" id="canvasWrap">
@@ -114,10 +121,14 @@
 <div id="arScreen" hidden>
   <div id="arOverlay">
     <div id="arHud">
+      <div id="arLevel"></div>
       <div id="arProgress">0 / 0 contas</div>
       <div id="arHint">Toca numa mesa ou no chão pra pendurar o desenho</div>
     </div>
-    <button id="exitArBtn">Sair da RA</button>
+    <div id="arControls">
+      <button id="flipCameraBtn" hidden>🔄 Trocar câmera</button>
+      <button id="exitArBtn">Sair da RA</button>
+    </div>
   </div>
 </div>
 

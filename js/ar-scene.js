@@ -12,10 +12,13 @@
 
 import * as THREE from 'three';
 import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
+import { createBeadGeometry } from './bead-geometry.js';
+import { playPickup, playCorrect, playWrong, playComplete } from './sound.js';
 
 const PINCH_THRESHOLD = 0.028; // metros entre polegar e indicador pra contar como "pinça"
 const PICK_RADIUS = 0.045; // metros de tolerância pra pegar conta / acertar célula
 const BOARD_TARGET_WIDTH = 0.24; // metros — largura física alvo do quadro (~24cm)
+const PINCER_MARKER_RADIUS = 0.006; // metros — raio das bolinhas do indicador de pinça na ponta dos dedos
 
 let renderer, scene, camera;
 let session = null;
@@ -30,6 +33,7 @@ let pattern = null;
 let cellMeshes = []; // { ghost, bead, filled, correct, targetLegendIdx }
 let paletteSpheres = []; // { mesh, legendIdx }
 let handStates = [null, null]; // { pinching, heldLegendIdx, previewMesh }
+let completed = false; // trava o som de conclusão pra não repetir a cada frame depois que já bateu 100%
 
 let callbacks = { onProgress: () => {}, onExit: () => {}, onHint: () => {} };
 
@@ -50,6 +54,7 @@ export async function startAR(patternData, cbs, container) {
   cellMeshes = [];
   paletteSpheres = [];
   handStates = [null, null];
+  completed = false;
 
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio);
@@ -123,7 +128,26 @@ function setupHands() {
     hand.userData.handModel = factory.createHandModel(hand, 'mesh');
     hand.add(hand.userData.handModel);
     scene.add(hand);
-    handStates[i] = { pinching: false, heldLegendIdx: null, previewMesh: null, hand };
+
+    // Marcador "tipo pinça": bolinha na ponta do polegar e do indicador,
+    // ligadas por uma linha — mostra onde o sistema está lendo os dois dedos
+    // de verdade e se a distância entre eles já é lida como pinça fechada
+    // (verde) ou ainda aberta (amarelo). Serve pra calibrar visualmente
+    // quando o encaixe não está pegando do jeito esperado.
+    const markerGeo = new THREE.SphereGeometry(PINCER_MARKER_RADIUS, 12, 8);
+    const thumbMarker = new THREE.Mesh(markerGeo, new THREE.MeshBasicMaterial({ color: 0xf9c74f }));
+    const indexMarker = new THREE.Mesh(markerGeo, new THREE.MeshBasicMaterial({ color: 0xf9c74f }));
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+    const pincerLine = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0xf9c74f }));
+    thumbMarker.visible = false;
+    indexMarker.visible = false;
+    pincerLine.visible = false;
+    scene.add(thumbMarker, indexMarker, pincerLine);
+
+    handStates[i] = {
+      pinching: false, heldLegendIdx: null, previewMesh: null, hand,
+      thumbMarker, indexMarker, pincerLine,
+    };
   }
 }
 
@@ -203,7 +227,7 @@ function buildBoard() {
   // na cor exata que a célula precisa — a pista visual de onde e qual cor
   // colocar, vista através da câmera antes de a conta ser encaixada.
   const ghostGeo = new THREE.CircleGeometry(cellSize * 0.46, 24).rotateX(-Math.PI / 2);
-  const beadGeo = new THREE.SphereGeometry(cellSize * 0.38, 16, 12);
+  const beadGeo = createBeadGeometry(cellSize * 0.38);
 
   cellMeshes = new Array(w * h).fill(null);
 
@@ -241,11 +265,11 @@ function buildPalette() {
   const rowWidth = (n - 1) * spacing;
   const rowZ = boardH / 2 + cellSize * 1.5;
 
-  const sphereGeo = new THREE.SphereGeometry(cellSize * 0.42, 16, 12);
+  const beadGeo = createBeadGeometry(cellSize * 0.42);
 
   paletteSpheres = legend.map((entry, idx) => {
     const color = new THREE.Color(entry.r / 255, entry.g / 255, entry.b / 255);
-    const mesh = new THREE.Mesh(sphereGeo, new THREE.MeshStandardMaterial({ color, roughness: 0.3 }));
+    const mesh = new THREE.Mesh(beadGeo, new THREE.MeshStandardMaterial({ color, roughness: 0.3 }));
     mesh.position.set(-rowWidth / 2 + idx * spacing, cellSize * 0.5, rowZ);
     boardGroup.add(mesh);
     return { mesh, legendIdx: idx, entry };
@@ -260,8 +284,13 @@ function updateHandInteraction(frame, refSpace) {
     const state = handStates[i];
     const hand = state.hand;
     const joints = hand.joints;
-    if (!joints || !joints['thumb-tip'] || !joints['index-finger-tip']) continue;
-    if (!joints['thumb-tip'].visible || !joints['index-finger-tip'].visible) continue;
+    if (!joints || !joints['thumb-tip'] || !joints['index-finger-tip']
+      || !joints['thumb-tip'].visible || !joints['index-finger-tip'].visible) {
+      state.thumbMarker.visible = false;
+      state.indexMarker.visible = false;
+      state.pincerLine.visible = false;
+      continue;
+    }
 
     const thumbTip = joints['thumb-tip'].position;
     const indexTip = joints['index-finger-tip'].position;
@@ -269,14 +298,29 @@ function updateHandInteraction(frame, refSpace) {
     const pinching = dist < PINCH_THRESHOLD;
     const midpoint = thumbTip.clone().lerp(indexTip, 0.5);
 
+    const markerColor = pinching ? 0x4ade80 : 0xf9c74f;
+    state.thumbMarker.position.copy(thumbTip);
+    state.thumbMarker.material.color.setHex(markerColor);
+    state.thumbMarker.visible = true;
+    state.indexMarker.position.copy(indexTip);
+    state.indexMarker.material.color.setHex(markerColor);
+    state.indexMarker.visible = true;
+    state.pincerLine.material.color.setHex(markerColor);
+    const linePos = state.pincerLine.geometry.attributes.position;
+    linePos.setXYZ(0, thumbTip.x, thumbTip.y, thumbTip.z);
+    linePos.setXYZ(1, indexTip.x, indexTip.y, indexTip.z);
+    linePos.needsUpdate = true;
+    state.pincerLine.visible = true;
+
     if (pinching && !state.pinching && state.heldLegendIdx === null) {
       // pinça começou perto da bandeja: pega aquela conta
       const picked = findNearestPalette(midpoint);
       if (picked) {
         state.heldLegendIdx = picked.legendIdx;
+        playPickup();
         const color = picked.mesh.material.color;
         if (!state.previewMesh) {
-          const geo = new THREE.SphereGeometry(0.012, 12, 8);
+          const geo = createBeadGeometry(0.012);
           const mat = new THREE.MeshStandardMaterial({ color: color.clone() });
           state.previewMesh = new THREE.Mesh(geo, mat);
           scene.add(state.previewMesh);
@@ -332,6 +376,7 @@ function fillCell(cell, legendIdx) {
   const entry = pattern.legend[legendIdx];
   if (entry.name !== cell.target.name) {
     flashReject(cell);
+    playWrong();
     return;
   }
   if (cell.filled) return;
@@ -341,6 +386,7 @@ function fillCell(cell, legendIdx) {
   cell.bead.material.color.setRGB(entry.r / 255, entry.g / 255, entry.b / 255);
   cell.ghost.material.color.set(0x4ade80);
   cell.ghost.material.opacity = 0.85;
+  playCorrect();
   reportProgress();
 }
 
@@ -365,6 +411,10 @@ function reportProgress() {
     if (cell.correct) correct++;
   }
   callbacks.onProgress(placed, correct, total);
+  if (!completed && total > 0 && correct === total) {
+    completed = true;
+    playComplete();
+  }
 }
 
 function onSessionEnd() {
@@ -383,6 +433,10 @@ function onSessionEnd() {
   callbacks.onExit();
 }
 
+// Retorna a promise de encerramento — quem chama (ex.: avanço de nível no
+// modo desafio) pode aguardar a sessão terminar de verdade antes de pedir
+// uma nova, em vez de tentar sobrepor duas sessões WebXR ao mesmo tempo.
 export function exitAR() {
-  if (session) session.end().catch(() => {});
+  if (session) return session.end().catch(() => {});
+  return Promise.resolve();
 }
