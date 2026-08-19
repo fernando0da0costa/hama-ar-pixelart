@@ -24,6 +24,8 @@ let renderer, scene, camera;
 let session = null;
 let hitTestSource = null;
 let hitTestSourceRequested = false;
+let hitTestStartedAt = null; // performance.now() de quando o hitTestSource ficou pronto, pra medir "há quanto tempo procurando sem achar nada"
+let hitTestHintStage = 0; // 0 = dica inicial, 1 = já escalou pra dica de "ainda não achei", evita ficar re-escrevendo a cada frame
 let reticle;
 let boardGroup = null;
 let boardPlaced = false;
@@ -101,9 +103,11 @@ export async function startAR(patternData, cbs, container) {
   const handTrackingAvailable = sessionSupportsHandTracking(session);
   callbacks.onHint(
     handTrackingAvailable
-      ? 'Toque numa superfície pra fixar o quadro'
+      ? 'Mova o celular devagar apontando pro chão ou uma mesa — o anel de mira aparece quando achar uma superfície'
       : 'Rastreamento de mão indisponível — toque na tela funciona como cursor de apontar/selecionar',
   );
+  hitTestStartedAt = null;
+  hitTestHintStage = 0;
 
   setupHands();
 
@@ -170,8 +174,13 @@ async function onXRFrame(frame) {
       try {
         const viewerSpace = await session.requestReferenceSpace('viewer');
         hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+        hitTestStartedAt = performance.now();
       } catch (e) {
+        // Sem isso o usuário fica travado pra sempre na dica "mova o
+        // celular" sem nunca entender por quê — ao menos avisa que o
+        // aparelho/navegador não tem hit-test de verdade.
         console.warn('hit-test indisponível:', e);
+        callbacks.onHint('Este navegador não conseguiu ativar a detecção de superfície (hit-test) — RA imersiva não vai funcionar aqui.');
       }
     }
     if (hitTestSource) {
@@ -182,6 +191,14 @@ async function onXRFrame(frame) {
         reticle.matrix.fromArray(pose.transform.matrix);
       } else {
         reticle.visible = false;
+        // Passou um tempo bom escaneando e nada — provavelmente ambiente
+        // pouco iluminado ou superfície lisa/sem textura pro ARCore
+        // reconhecer, não bug. Escala a dica só uma vez pra não sobrescrever
+        // outros hints (ex.: já pegou uma conta) toda hora.
+        if (hitTestHintStage === 0 && hitTestStartedAt && performance.now() - hitTestStartedAt > 6000) {
+          hitTestHintStage = 1;
+          callbacks.onHint('Ainda não achei uma superfície — tenta um lugar mais iluminado, com textura (evita chão/mesa liso e uniforme), e continue movendo o celular devagar.');
+        }
       }
     }
   }
