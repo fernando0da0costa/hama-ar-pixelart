@@ -174,6 +174,24 @@ button.cta-pulse{ animation: cta-pulse 1.8s ease-out infinite; }
   font-family: 'Courier New', monospace;
 }
 
+/* Mira central — mostra pra onde a câmera está apontando antes do toque,
+   já que sem mão de verdade a interação é "aponta o celular e toca em
+   qualquer lugar da tela" (o toque sempre mira o centro da câmera, não o
+   ponto exato do dedo na tela). Verde quando tem uma conta/furo "no alvo",
+   amarelo quando não tem nada ali ainda. */
+#arCrosshair{
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 28px; height: 28px; pointer-events: none; z-index: 2;
+}
+#arCrosshair[hidden]{ display: none; }
+#arCrosshair::before, #arCrosshair::after{
+  content: ''; position: absolute; background: var(--accent);
+  transition: background 0.1s;
+}
+#arCrosshair::before{ left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+#arCrosshair::after{ top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+#arCrosshair.hover::before, #arCrosshair.hover::after{ background: var(--ok); }
+
 #arHud{
   align-self: flex-start;
   background: rgba(13,15,18,0.75);

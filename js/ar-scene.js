@@ -50,6 +50,9 @@ let completed = false; // trava o som de conclusão pra não repetir a cada fram
 const tapRaycaster = new THREE.Raycaster();
 let tapHeldLegendIdx = null;
 let tapSelectedMesh = null;
+let hoveredMesh = null; // conta/furo mais próximo do centro da câmera agora, destacado antes do toque
+const HOVER_SCALE = 1.15;
+let crosshairEl = null;
 
 let callbacks = { onProgress: () => {}, onExit: () => {}, onHint: () => {} };
 
@@ -98,6 +101,8 @@ export async function startAR(patternData, cbs, container) {
   scene.add(reticle);
 
   const overlayRoot = document.getElementById('arOverlay');
+  crosshairEl = document.getElementById('arCrosshair');
+  if (crosshairEl) { crosshairEl.hidden = true; crosshairEl.classList.remove('hover'); }
   const sessionInit = {
     requiredFeatures: ['hit-test'],
     optionalFeatures: ['hand-tracking', 'dom-overlay'],
@@ -125,6 +130,7 @@ export async function startAR(patternData, cbs, container) {
   handHintStage = 0;
   tapHeldLegendIdx = null;
   tapSelectedMesh = null;
+  hoveredMesh = null;
 
   setupHands();
 
@@ -230,7 +236,46 @@ async function onXRFrame(frame) {
     callbacks.onHint('Não detectei rastreamento de mão neste aparelho (comum em celular — só funciona bem em headsets como Quest). Toque numa conta da paleta pra escolher a cor, depois toque no furo certo pra encaixar.');
   }
 
+  updateTapHover();
+
   renderer.render(scene, camera);
+}
+
+// Destaca em tempo real a conta/furo mais próximo do centro da câmera —
+// sem isso, mirar o toque era "adivinhar", já que o toque na tela sempre
+// mira o centro da câmera (não o ponto exato onde o dedo encosta). Só roda
+// quando o toque é a via de interação ativa (sem mão real detectada).
+function updateTapHover() {
+  const active = boardPlaced && !anyRealHandSeen;
+  if (crosshairEl) crosshairEl.hidden = !active;
+  if (!active) {
+    if (hoveredMesh && hoveredMesh !== tapSelectedMesh) hoveredMesh.scale.setScalar(1);
+    hoveredMesh = null;
+    return;
+  }
+
+  const camPos = new THREE.Vector3();
+  const camDir = new THREE.Vector3();
+  camera.getWorldPosition(camPos);
+  camera.getWorldDirection(camDir);
+  tapRaycaster.set(camPos, camDir);
+
+  // Mesma prioridade do toque de verdade (handleTapSelect): paleta primeiro;
+  // furo só entra na mira se já tiver uma cor selecionada pra encaixar.
+  let hits = tapRaycaster.intersectObjects(paletteSpheres.map((p) => p.mesh));
+  if (hits.length === 0 && tapHeldLegendIdx !== null) {
+    hits = tapRaycaster.intersectObjects(cellMeshes.filter(Boolean).map((c) => c.ghost));
+  }
+  const newHover = hits.length > 0 ? hits[0].object : null;
+
+  if (newHover === hoveredMesh) {
+    if (crosshairEl) crosshairEl.classList.toggle('hover', !!newHover);
+    return;
+  }
+  if (hoveredMesh && hoveredMesh !== tapSelectedMesh) hoveredMesh.scale.setScalar(1);
+  hoveredMesh = newHover;
+  if (hoveredMesh && hoveredMesh !== tapSelectedMesh) hoveredMesh.scale.setScalar(HOVER_SCALE);
+  if (crosshairEl) crosshairEl.classList.toggle('hover', !!newHover);
 }
 
 function onSelect(event) {
@@ -534,6 +579,7 @@ function onSessionEnd() {
   hitTestSourceRequested = false;
   boardPlaced = false;
   boardGroup = null;
+  if (crosshairEl) { crosshairEl.hidden = true; crosshairEl.classList.remove('hover'); }
   callbacks.onExit();
 }
 
