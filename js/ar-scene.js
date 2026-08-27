@@ -563,6 +563,7 @@ function reportProgress() {
   if (!completed && total > 0 && correct === total) {
     completed = true;
     playComplete();
+    callbacks.onPatternCompleted?.(pattern);
   }
 }
 

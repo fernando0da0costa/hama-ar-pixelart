@@ -544,6 +544,7 @@ function reportProgress() {
   if (!completed && cellMeshes.length > 0 && correct === cellMeshes.length) {
     completed = true;
     playComplete();
+    callbacks.onPatternCompleted?.(pattern);
   }
 }
 

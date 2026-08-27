@@ -19,15 +19,10 @@
       <div class="panel">
         <button class="primary" id="enterArRealBtn" disabled>🥽 Usar Realidade Aumentada</button>
         <button class="secondary" id="enterSimBtn" disabled>💻 Simular sem RA (câmera)</button>
+        <button class="secondary" id="enterRoomBtn" disabled>🏠 Sala 3D (sem câmera)</button>
         <div class="hint" id="arSupportMsg" style="margin-bottom:18px;"></div>
 
-        <h2>01 · Escolha uma forma</h2>
-        <div class="shape-grid" id="shapeGrid"></div>
-
-        <label class="bg-toggle">
-          <input type="checkbox" id="challengeToggle">
-          <span>Modo desafio: começa fácil e a dificuldade vai aumentando a cada acerto</span>
-        </label>
+        <div class="hint" id="levelInfo" style="margin-bottom:18px;"></div>
 
         <details class="advanced">
           <summary>Quero usar uma foto minha</summary>
@@ -112,6 +107,11 @@
       <h2>Legenda · quantas contas de cada cor</h2>
       <div class="legend-grid" id="legendGrid"></div>
     </div>
+
+    <div class="legend" id="historyPanel">
+      <h2>Últimas 3 concluídas</h2>
+      <div class="history-grid" id="historyGrid"></div>
+    </div>
   </div>
 </header>
 
@@ -125,6 +125,11 @@
       <div id="arLevel"></div>
       <div id="arProgress">0 / 0 contas</div>
       <div id="arHint">Toca numa mesa ou no chão pra pendurar o desenho</div>
+    </div>
+    <div id="captureResHud" hidden>
+      <span id="captureResVal">16×16</span>
+      <input type="range" id="captureResSlider" min="8" max="40" value="16" step="1" orient="vertical">
+      <label for="captureResSlider">Resolução da foto</label>
     </div>
     <div id="arControls">
       <button id="flipCameraBtn" hidden>🔄 Trocar câmera</button>

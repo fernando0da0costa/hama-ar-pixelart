@@ -1,9 +1,10 @@
 import { computePattern, nameForColor } from './pattern.js';
 import { isArSupported, startAR, exitAR } from './ar-scene.js';
 import { isWebcamSupported, startWebcam, exitWebcam, flipCamera } from './webcam-scene.js';
+import { isRoomSupported, startRoom, exitRoom, setCaptureResolution, getCaptureResolution } from './room-scene.js';
 import { SHAPES } from './shapes.js';
 import { primeAudio } from './sound.js';
-import { isCompleted, markCompleted } from './progress.js';
+import { isCompleted, markCompleted, addHistoryEntry, getRecentHistory } from './progress.js';
 
 const fileInput = document.getElementById('fileInput');
 const dropZone = document.getElementById('dropZone');
@@ -24,10 +25,13 @@ const paletteMode = document.getElementById('paletteMode');
 const downloadBtn = document.getElementById('downloadBtn');
 const enterArRealBtn = document.getElementById('enterArRealBtn');
 const enterSimBtn = document.getElementById('enterSimBtn');
+const enterRoomBtn = document.getElementById('enterRoomBtn');
 const arSupportMsg = document.getElementById('arSupportMsg');
 const metaInfo = document.getElementById('metaInfo');
 const legendPanel = document.getElementById('legendPanel');
 const legendGrid = document.getElementById('legendGrid');
+const historyPanel = document.getElementById('historyPanel');
+const historyGrid = document.getElementById('historyGrid');
 const resetCropBtn = document.getElementById('resetCropBtn');
 const originalSample = document.getElementById('originalSample');
 const originalEmpty = document.getElementById('originalEmpty');
@@ -46,14 +50,18 @@ const arProgress = document.getElementById('arProgress');
 const arHint = document.getElementById('arHint');
 const exitArBtn = document.getElementById('exitArBtn');
 const flipCameraBtn = document.getElementById('flipCameraBtn');
-const challengeToggle = document.getElementById('challengeToggle');
+const captureResHud = document.getElementById('captureResHud');
+const captureResSlider = document.getElementById('captureResSlider');
+const captureResVal = document.getElementById('captureResVal');
 const arLevel = document.getElementById('arLevel');
+const levelInfo = document.getElementById('levelInfo');
 
 let originalImage = null;
 let dispScale = 1;
-let activeMode = null; // 'ar' | 'webcam' | null — setado quando um dos dois botões é clicado
+let activeMode = null; // 'ar' | 'webcam' | 'room' | null — setado quando um dos três botões é clicado
 let arSupported = false;
 let simSupported = false;
+let roomSupported = false;
 let crop = { x: 0, y: 0, w: 0, h: 0 };
 let currentPattern = null;
 
@@ -62,20 +70,26 @@ let currentPattern = null;
 function updateEnterButtons() {
   enterArRealBtn.disabled = !arSupported || !currentPattern;
   enterSimBtn.disabled = !simSupported || !currentPattern;
+  enterRoomBtn.disabled = !roomSupported || !currentPattern;
 }
 
-// Modo desafio: das formas prontas (SHAPES), ordenadas da mais fácil pra
-// mais difícil pelo número de contas, e avança pra próxima sozinho quando
-// o desenho atual é completado 100% certo.
+// O jogo é sempre por fases: das formas prontas (SHAPES), ordenadas da mais
+// fácil pra mais difícil pelo número de contas, avançando pra próxima
+// sozinho quando o desenho atual é completado 100% certo. Só sai desse
+// trilho quando o usuário sobe uma foto própria (applyPattern cancela o
+// challengeMode nesse caso) — um desenho customizado não tem lugar natural
+// numa escada de dificuldade curada.
 const challengeOrder = [...SHAPES].sort((a, b) => a.totalBeads - b.totalBeads);
-let challengeMode = false;
+let challengeMode = true;
 let challengeIndex = 0;
 let advancingChallenge = false;
 
 function updateChallengeUI() {
-  arLevel.textContent = challengeMode
+  const text = challengeMode
     ? `Nível ${challengeIndex + 1} de ${challengeOrder.length} · ${challengeOrder[challengeIndex].name}`
     : '';
+  arLevel.textContent = text;
+  levelInfo.textContent = text;
 }
 
 function updateLabels() {
@@ -218,12 +232,11 @@ resetCropBtn.addEventListener('click', () => {
 });
 
 function applyPattern(p, { fromChallenge = false } = {}) {
-  // Qualquer escolha manual de forma/foto cancela o modo desafio — ele só
-  // faz sentido guiando a sequência sozinho; se o usuário escolheu outra
-  // coisa, é porque não quer mais seguir a sequência automática.
+  // Só uma foto própria (fromChallenge=false vindo do upload) tira o jogo da
+  // escada de fases — um desenho customizado não faz parte da progressão
+  // curada de dificuldade, então vira um desenho avulso, sem avanço automático.
   if (!fromChallenge && challengeMode) {
     challengeMode = false;
-    challengeToggle.checked = false;
     updateChallengeUI();
   }
 
@@ -257,93 +270,6 @@ function render() {
   });
 
   applyPattern(p);
-}
-
-function makeThumbnail(p, size) {
-  const thumb = document.createElement('canvas');
-  thumb.width = size;
-  thumb.height = size;
-  const tctx = thumb.getContext('2d');
-  tctx.fillStyle = '#0d0f12';
-  tctx.fillRect(0, 0, size, size);
-
-  const cell = size / Math.max(p.w, p.h);
-  const offX = (size - p.w * cell) / 2;
-  const offY = (size - p.h * cell) / 2;
-
-  for (let y = 0; y < p.h; y++) {
-    for (let x = 0; x < p.w; x++) {
-      const c = p.cells[y * p.w + x];
-      if (!c) continue;
-      tctx.beginPath();
-      tctx.arc(offX + x * cell + cell / 2, offY + y * cell + cell / 2, cell * 0.42, 0, Math.PI * 2);
-      tctx.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
-      tctx.fill();
-    }
-  }
-  return thumb;
-}
-
-const SHAPE_GRID_SIZE = 6;
-
-// Sorteia n itens distintos de arr (Fisher-Yates parcial) — usado pra
-// mostrar só uma amostra pequena das 36 formas de cada vez, em vez da grade
-// inteira, e trocar a cada carregamento da tela.
-function pickRandomSubset(arr, n) {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy.slice(0, n);
-}
-
-function buildShapeGrid() {
-  const shapeGrid = document.getElementById('shapeGrid');
-  shapeGrid.innerHTML = '';
-  const buttons = [];
-
-  pickRandomSubset(SHAPES, SHAPE_GRID_SIZE).forEach((shape) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'shape-btn';
-    btn.dataset.shapeName = shape.name;
-
-    const thumbWrap = document.createElement('div');
-    thumbWrap.className = 'thumb-wrap';
-    thumbWrap.appendChild(makeThumbnail(shape, 64));
-    const badge = document.createElement('span');
-    badge.className = 'done-badge';
-    badge.textContent = '✓';
-    thumbWrap.appendChild(badge);
-    btn.appendChild(thumbWrap);
-
-    const label = document.createElement('span');
-    label.textContent = shape.name;
-    btn.appendChild(label);
-    btn.addEventListener('click', () => {
-      buttons.forEach((b) => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      applyPattern(shape);
-    });
-    shapeGrid.appendChild(btn);
-    buttons.push(btn);
-  });
-
-  refreshShapeBadges();
-
-  // Já entra com uma forma aleatória escolhida — zero passos até ter algo pra
-  // ver, e dá variedade a cada visita (senão seria sempre o Coração primeiro).
-  if (buttons.length) buttons[Math.floor(Math.random() * buttons.length)].click();
-}
-
-// Marca com ✓ as formas já completadas antes (progress.js/localStorage) —
-// chamado de novo toda vez que uma forma é concluída, pra atualizar sem
-// precisar reconstruir a grade inteira.
-function refreshShapeBadges() {
-  document.querySelectorAll('.shape-btn').forEach((btn) => {
-    btn.classList.toggle('completed', isCompleted(btn.dataset.shapeName));
-  });
 }
 
 function drawPreview(p) {
@@ -391,6 +317,100 @@ function drawLegend(p) {
     legendGrid.appendChild(item);
   }
   legendPanel.style.display = 'block';
+}
+
+// Miniatura em PNG (dataURL) de um desenho já concluído, pra guardar no
+// histórico do localStorage — canvas próprio, pequeno de propósito (bead
+// menor que o da prévia principal), pra manter o histórico leve.
+function renderPatternToDataUrl(p, beadSize = 16) {
+  const c = document.createElement('canvas');
+  c.width = p.w * beadSize;
+  c.height = p.h * beadSize;
+  const cx = c.getContext('2d');
+  cx.imageSmoothingEnabled = false;
+  cx.fillStyle = '#16191d';
+  cx.fillRect(0, 0, c.width, c.height);
+
+  for (let y = 0; y < p.h; y++) {
+    for (let x = 0; x < p.w; x++) {
+      const cell = p.cells[y * p.w + x];
+      if (!cell) continue;
+      const cxp = x * beadSize + beadSize / 2;
+      const cyp = y * beadSize + beadSize / 2;
+      const radius = beadSize / 2 - 1;
+
+      const grad = cx.createRadialGradient(cxp - radius * 0.35, cyp - radius * 0.35, radius * 0.15, cxp, cyp, radius);
+      grad.addColorStop(0, 'rgba(255,255,255,0.35)');
+      grad.addColorStop(0.25, `rgb(${cell.r},${cell.g},${cell.b})`);
+      grad.addColorStop(1, `rgb(${Math.max(0, cell.r - 25)},${Math.max(0, cell.g - 25)},${Math.max(0, cell.b - 25)})`);
+
+      cx.beginPath();
+      cx.arc(cxp, cyp, radius, 0, Math.PI * 2);
+      cx.fillStyle = grad;
+      cx.fill();
+    }
+  }
+  return c.toDataURL('image/png');
+}
+
+// Chamado sempre que qualquer um dos três modos (RA/webcam/sala) termina um
+// desenho 100% certo — guarda a miniatura no localStorage (progress.js) e
+// atualiza a lista "últimas 3 concluídas" da tela de setup.
+function savePatternCompletion(patternData) {
+  if (!patternData) return;
+  const dataUrl = renderPatternToDataUrl(patternData);
+  addHistoryEntry({
+    name: patternData.name || 'Desenho',
+    dataUrl,
+    w: patternData.w,
+    h: patternData.h,
+    totalBeads: patternData.totalBeads,
+  });
+  renderRecentHistory();
+}
+
+function formatHistoryDate(at) {
+  const d = new Date(at);
+  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function renderRecentHistory() {
+  const recent = getRecentHistory(3);
+  historyGrid.innerHTML = '';
+  historyPanel.style.display = recent.length ? 'block' : 'none';
+
+  for (const entry of recent) {
+    const card = document.createElement('div');
+    card.className = 'history-card';
+
+    const img = document.createElement('img');
+    img.src = entry.dataUrl;
+    img.alt = entry.name;
+    card.appendChild(img);
+
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = `${entry.name} (${entry.totalBeads} contas)`;
+    card.appendChild(name);
+
+    const date = document.createElement('div');
+    date.className = 'date';
+    date.textContent = formatHistoryDate(entry.at);
+    card.appendChild(date);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '💾 Salvar imagem';
+    btn.addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.download = `hama-${entry.name.replace(/[^\w-]+/g, '_')}.png`;
+      link.href = entry.dataUrl;
+      link.click();
+    });
+    card.appendChild(btn);
+
+    historyGrid.appendChild(card);
+  }
 }
 
 async function loadFile(file) {
@@ -503,6 +523,7 @@ window.addEventListener('resize', () => {
 (async () => {
   arSupported = await isArSupported();
   simSupported = isWebcamSupported();
+  roomSupported = isRoomSupported();
 
   if (arSupported && simSupported) {
     arSupportMsg.textContent = 'RA imersiva disponível — "Usar Realidade Aumentada" fixa o quadro no mundo real. "Simular sem RA" abre a versão de teste pela câmera comum, sem precisar de headset.';
@@ -522,42 +543,36 @@ window.addEventListener('resize', () => {
   updateEnterButtons();
 })();
 
-buildShapeGrid();
-
-challengeToggle.addEventListener('change', () => {
-  challengeMode = challengeToggle.checked;
-  if (challengeMode) {
-    challengeIndex = 0;
-    const doneCount = challengeOrder.filter((s) => isCompleted(s.name)).length;
-    if (doneCount > 0) {
-      const resume = confirm(
-        `Você já completou ${doneCount} de ${challengeOrder.length} níveis antes. Continuar de onde parou?`
-        + '\n\n"OK" continua no próximo nível não feito. "Cancelar" recomeça do nível 1.',
-      );
-      if (resume) {
-        const nextIdx = challengeOrder.findIndex((s) => !isCompleted(s.name));
-        challengeIndex = nextIdx === -1 ? 0 : nextIdx; // -1 = já completou tudo, recomeça do 1
-      }
-    }
-    document.querySelectorAll('.shape-btn.selected').forEach((b) => b.classList.remove('selected'));
-    applyPattern(challengeOrder[challengeIndex], { fromChallenge: true });
-  }
+// Entra direto no jogo por fases: retoma no primeiro nível ainda não
+// completado (progress.js/localStorage), ou no nível 1 se for a primeira vez
+// ou já tiver completado tudo — sem precisar de nenhum passo manual antes.
+(() => {
+  const nextIdx = challengeOrder.findIndex((s) => !isCompleted(s.name));
+  challengeIndex = nextIdx === -1 ? 0 : nextIdx;
+  applyPattern(challengeOrder[challengeIndex], { fromChallenge: true });
   updateChallengeUI();
-});
+})();
 
 function makeSceneCallbacks() {
   return {
-    onProgress: (placed, correct, total) => {
+    onProgress: (placed, correct, total, patternName) => {
       arProgress.textContent = `${placed} / ${total} contas · ${correct} corretas`;
-      if (total > 0 && correct === total && currentPattern?.name) {
+      // Na sala 3D dá pra "fotografar" um quadro na parede e converter na
+      // hora (protótipo de IA) sem sair da sessão — isso troca o desenho na
+      // mesa sem passar pelo applyPattern da tela de setup. Um nome diferente
+      // do nível atual é essa captura avulsa: conta como progresso na hora
+      // (placar/som), mas não mexe no histórico de fases nem avança nível,
+      // senão completar uma foto capturada avançaria o nível errado.
+      const isCurrentLevel = !patternName || patternName === currentPattern?.name;
+      if (total > 0 && correct === total && isCurrentLevel && currentPattern?.name) {
         markCompleted(currentPattern.name);
-        refreshShapeBadges();
       }
-      if (challengeMode && !advancingChallenge && total > 0 && correct === total) {
+      if (challengeMode && !advancingChallenge && total > 0 && correct === total && isCurrentLevel) {
         advanceChallenge();
       }
     },
     onHint: (text) => { arHint.textContent = text; },
+    onPatternCompleted: (patternData) => savePatternCompletion(patternData),
     onExit: () => {
       // Durante o avanço automático de nível, o próprio advanceChallenge já
       // controla a troca de tela — não deixa esse onExit (disparado pela
@@ -573,7 +588,7 @@ async function enterMode(mode) {
   if (!currentPattern || !mode) return;
   activeMode = mode;
   primeAudio(); // precisa ser chamado a partir de um clique de verdade pra destravar o áudio
-  const start = activeMode === 'ar' ? startAR : startWebcam;
+  const start = activeMode === 'ar' ? startAR : activeMode === 'webcam' ? startWebcam : startRoom;
   try {
     setupScreen.hidden = true;
     arScreen.hidden = false;
@@ -581,6 +596,13 @@ async function enterMode(mode) {
     // em RA imersiva (WebXR) é o próprio sistema do headset/celular que
     // controla a câmera de passagem, sem essa escolha.
     flipCameraBtn.hidden = activeMode !== 'webcam';
+    // Barra de resolução da captura de foto só existe na sala 3D (é lá que
+    // dá pra "fotografar" um quadro na parede ou subir sua própria foto).
+    captureResHud.hidden = activeMode !== 'room';
+    if (activeMode === 'room') {
+      captureResSlider.value = getCaptureResolution();
+      captureResVal.textContent = `${captureResSlider.value}×${captureResSlider.value}`;
+    }
     await start(currentPattern, makeSceneCallbacks(), arScreen);
   } catch (err) {
     console.error('Falha ao iniciar:', err);
@@ -610,7 +632,8 @@ async function advanceChallenge() {
   updateChallengeUI();
 
   if (activeMode === 'ar') await exitAR();
-  else exitWebcam();
+  else if (activeMode === 'webcam') exitWebcam();
+  else exitRoom();
 
   advancingChallenge = false; // precisa cair antes do enterMode reengatar makeSceneCallbacks
   await enterMode(activeMode); // mantém o mesmo modo (RA ou simulação) do nível anterior
@@ -618,14 +641,22 @@ async function advanceChallenge() {
 
 enterArRealBtn.addEventListener('click', () => enterMode('ar'));
 enterSimBtn.addEventListener('click', () => enterMode('webcam'));
+enterRoomBtn.addEventListener('click', () => enterMode('room'));
 
 exitArBtn.addEventListener('click', () => {
   if (activeMode === 'ar') exitAR();
   else if (activeMode === 'webcam') exitWebcam();
+  else if (activeMode === 'room') exitRoom();
 });
 
 flipCameraBtn.addEventListener('click', () => {
   if (activeMode === 'webcam') flipCamera();
 });
 
+captureResSlider.addEventListener('input', () => {
+  captureResVal.textContent = `${captureResSlider.value}×${captureResSlider.value}`;
+  setCaptureResolution(Number(captureResSlider.value));
+});
+
 updateLabels();
+renderRecentHistory();
