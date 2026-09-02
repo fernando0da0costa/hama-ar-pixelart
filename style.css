@@ -83,15 +83,18 @@ button.primary{
   font-family: inherit; font-weight: 700; font-size: 13px; letter-spacing: 1px; text-transform: uppercase;
   cursor: pointer; margin-top: 4px;
 }
-button.primary:disabled{ background: var(--grid-line); color: var(--muted); cursor: not-allowed; }
+button.primary:disabled{ background: #3a3f47; color: #c2c6cc; cursor: not-allowed; }
 
+/* Contraste bom sem depender de :hover — celular não tem hover, então um
+   botão que só ficava visível ao passar o mouse (borda escura, texto
+   apagado) ficava permanentemente sem destaque em touchscreen. */
 button.secondary{
-  width: 100%; background: transparent; color: var(--muted); border: 1px solid var(--grid-line); padding: 9px;
+  width: 100%; background: transparent; color: var(--text); border: 1px solid #454b54; padding: 9px;
   font-family: inherit; font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
   cursor: pointer; margin-top: 8px;
 }
 button.secondary:hover{ border-color: var(--accent); color: var(--accent); }
-button.secondary:disabled{ opacity: 0.4; cursor: not-allowed; }
+button.secondary:disabled{ opacity: 0.5; color: var(--muted); border-color: var(--grid-line); cursor: not-allowed; }
 
 /* Quando RA imersiva não está disponível, "Simular" vira a única opção —
    em vez de deixar o botão de RA cinza e desabilitado do lado (feio, parece

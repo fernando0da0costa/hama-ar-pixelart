@@ -513,11 +513,15 @@ window.addEventListener('resize', () => {
 });
 
 // ------------------------------------------------------------------ //
-// RA ou simulação — dois botões independentes em vez de escolha automática:
-// "Usar Realidade Aumentada" exige WebXR immersive-ar de verdade (Quest
-// Browser ou celular com ARCore+WebXR); "Simular sem RA" é a webcam comum
-// (mesma interação de pinça, só que 2D e sem ancoragem no mundo real), útil
-// mesmo em aparelhos que TÊM suporte a RA, pra testar sem headset.
+// Três modos, sempre visíveis os três (nunca escondidos) — só o estado
+// desabilitado/cinza indica que o navegador não suporta aquele modo
+// específico, em vez de o botão sumir. "Sala 3D" vem sempre primeiro por ser
+// o único que não depende de câmera nem de HTTPS/WebXR — funciona em
+// qualquer navegador com WebGL, então é a opção mais confiável pra testar em
+// qualquer aparelho (celular incluso). "Usar Realidade Aumentada" exige
+// WebXR immersive-ar de verdade (Quest Browser ou celular com ARCore+WebXR,
+// servido por HTTPS); "Simular sem RA" é a webcam comum (mesma interação de
+// pinça, só que 2D e sem ancoragem no mundo real).
 // ------------------------------------------------------------------ //
 
 (async () => {
@@ -525,20 +529,12 @@ window.addEventListener('resize', () => {
   simSupported = isWebcamSupported();
   roomSupported = isRoomSupported();
 
-  if (arSupported && simSupported) {
-    arSupportMsg.textContent = 'RA imersiva disponível — "Usar Realidade Aumentada" fixa o quadro no mundo real. "Simular sem RA" abre a versão de teste pela câmera comum, sem precisar de headset.';
-  } else if (arSupported) {
-    arSupportMsg.textContent = 'RA imersiva disponível, mas este navegador não tem acesso à câmera comum pro modo de simulação.';
-  } else if (simSupported) {
-    // Sem RA de verdade, o botão de RA desabilitado (cinza) só atrapalha —
-    // some com ele e deixa o Simular como a opção óbvia e chamativa.
-    enterArRealBtn.hidden = true;
-    enterSimBtn.classList.remove('secondary');
-    enterSimBtn.classList.add('primary', 'cta-pulse');
-    arSupportMsg.textContent = 'Este aparelho não tem RA imersiva (precisa de Quest ou celular com WebXR) — use "Simular sem RA" pela webcam comum.';
-  } else {
-    arSupportMsg.textContent = 'Este navegador não tem câmera nem suporte a RA imersiva.';
-  }
+  const notes = [];
+  if (!arSupported) notes.push('RA imersiva indisponível aqui (precisa de Quest ou celular com WebXR/ARCore, servido por HTTPS).');
+  if (!simSupported) notes.push('Câmera comum indisponível pro modo de simulação.');
+  arSupportMsg.textContent = notes.length
+    ? notes.join(' ') + ' A Sala 3D funciona em qualquer navegador, sem essas exigências.'
+    : 'RA imersiva e câmera comum disponíveis — escolha qualquer um dos três modos abaixo.';
 
   updateEnterButtons();
 })();
