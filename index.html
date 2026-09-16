@@ -4,137 +4,105 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Hama AR — Monte contas no ar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<header id="setupScreen">
-  <div class="wrap">
+<!-- Varredura de CRT/vinheta por cima de tudo — só decoração (pointer-events
+     desligado), reforça a cara de "tela de videogame retrô" em qualquer uma
+     das três telas sem interferir em nenhum clique/toque por baixo. -->
+<div id="crtOverlay" aria-hidden="true"></div>
+
+<!-- Botão de música: fica visível em qualquer uma das telas (z-index acima
+     de todas), pra poder ligar/desligar a trilha de fundo a qualquer
+     momento — importante pro público incluir crianças com sensibilidade
+     sensorial, que podem preferir jogar sem música. -->
+<button id="musicToggleBtn" title="Música de fundo" aria-label="Música de fundo">🔊</button>
+<button id="mirrorToggleBtn" title="Espelhar câmera" aria-label="Espelhar câmera">🪞</button>
+
+<!-- Tela de boas-vindas: primeira coisa que aparece, com animação de
+     "carregando" enquanto o app confere se a câmera está disponível. Some
+     sozinha assim que o menu de jogos (já com a câmera ligada) fica pronto. -->
+<div id="welcomeScreen">
+  <!-- Continhas flutuantes decorativas atrás do card — puramente visual,
+       cada uma com sua própria posição/atraso via style inline, animação em
+       CSS (ver .bead-float). -->
+  <div class="bead-field" aria-hidden="true">
+    <span class="bead-float" style="--x:8%; --d:0s; --dur:7s; background:#c91e2a;"></span>
+    <span class="bead-float" style="--x:22%; --d:1.1s; --dur:8.5s; background:#f9c74f;"></span>
+    <span class="bead-float" style="--x:38%; --d:2.4s; --dur:6.5s; background:#1e5aa8;"></span>
+    <span class="bead-float" style="--x:55%; --d:0.6s; --dur:9s; background:#18853a;"></span>
+    <span class="bead-float" style="--x:70%; --d:1.8s; --dur:7.5s; background:#754a98;"></span>
+    <span class="bead-float" style="--x:84%; --d:3s; --dur:8s; background:#ed83a9;"></span>
+    <span class="bead-float" style="--x:94%; --d:0.3s; --dur:6.8s; background:#ed7423;"></span>
+  </div>
+  <div class="welcome-card">
     <span class="eyebrow">RA · MÃOS · CONTAS</span>
-    <h1>Escolha um <span>desenho</span> pra montar</h1>
-    <p>Toca numa forminha, depois aperta "Montar no ar" — e usa a mãozinha pra
-    encaixar as continhas na cor certa, flutuando bem na tua frente!</p>
+    <h1 class="glitch-title">Hama <span>AR</span></h1>
+    <p class="tagline">monte contas de verdade só com a mão, na webcam</p>
+    <div class="loader" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+    <p id="welcomeStatus">Carregando…</p>
+  </div>
+</div>
 
-    <div class="app">
-      <div class="panel">
-        <button class="primary" id="enterRoomBtn" disabled>🏠 Sala 3D (sem câmera)</button>
-        <button class="secondary" id="enterArRealBtn" disabled>🥽 Usar Realidade Aumentada</button>
-        <button class="secondary" id="enterSimBtn" disabled>💻 Simular sem RA (câmera)</button>
-        <div class="hint" id="arSupportMsg" style="margin-bottom:18px;"></div>
-
-        <div class="hint" id="levelInfo" style="margin-bottom:18px;"></div>
-
-        <details class="advanced">
-          <summary>Quero usar uma foto minha</summary>
-
-          <label class="drop" id="dropZone">
-            <input type="file" id="fileInput" accept="image/*">
-            <div id="dropLabel">Clique ou arraste uma imagem aqui</div>
-          </label>
-
-          <label class="bg-toggle">
-            <input type="checkbox" id="removeBgToggle">
-            <span>Isolar objeto (remover fundo automaticamente)</span>
-          </label>
-          <div class="hint" id="removeBgStatus">Baixa um modelo leve na primeira vez (roda local no navegador, sem enviar a imagem pra nenhum servidor).</div>
-
-          <h2>Imagem original</h2>
-          <div class="original-wrap" id="originalWrap">
-            <div class="crop-empty" id="originalEmpty">A amostra da imagem original aparece aqui.</div>
-            <img id="originalSample" style="display:none;" alt="Imagem original">
-          </div>
-          <div class="hint" id="originalDims"></div>
-
-          <h2 style="margin-top:20px;">Área de recorte</h2>
-          <div class="crop-wrap" id="cropWrap">
-            <div class="crop-empty" id="cropEmpty">Envie uma imagem pra escolher o pedaço que quer usar.</div>
-            <canvas id="cropCanvas" style="display:none;"></canvas>
-          </div>
-          <div class="hint">Arraste pra desenhar a área. Puxe os cantos pra ajustar o tamanho, ou arraste o meio pra mover.</div>
-          <button class="secondary" id="resetCropBtn">Usar imagem inteira</button>
-
-          <h2 style="margin-top:20px;">Resolução</h2>
-          <div class="field">
-            <label>Resolução da grade <b id="resolutionVal">12×12</b></label>
-            <input type="range" id="resolutionSlider" min="5" max="24" value="12">
-            <div class="hint">Em RA, quanto menor a grade, mais fácil de rastrear e montar com a mão. Recomendado até 16×16.</div>
-          </div>
-          <div class="field">
-            <label>Largura × Altura (em contas)</label>
-            <div class="dims">
-              <input type="number" id="gridW" min="5" max="24" value="12">
-              <input type="number" id="gridH" min="5" max="24" value="12">
-            </div>
-            <div class="presets">
-              <button data-w="8" data-h="8">8×8</button>
-              <button data-w="10" data-h="10">10×10</button>
-              <button data-w="12" data-h="12">12×12</button>
-              <button data-w="16" data-h="16">16×16</button>
-            </div>
-          </div>
-
-          <h2>Cores</h2>
-          <div class="field">
-            <label>Nº de cores <b id="colorsVal">8</b></label>
-            <input type="range" id="colorsCount" min="2" max="16" value="8">
-            <div class="hint">Menos cores = mais fácil de achar o pino certo na paleta flutuante da RA.</div>
-          </div>
-          <div class="field">
-            <label>Simplificar tons <b id="simplifyVal">0%</b></label>
-            <input type="range" id="simplifyTolerance" min="0" max="100" value="0">
-          </div>
-          <div class="field">
-            <label>Paleta</label>
-            <select id="paletteMode">
-              <option value="hama" selected>Padrão Hama/Perler (fixa, 24 cores)</option>
-              <option value="auto">Automática (cores da imagem)</option>
-            </select>
-          </div>
-        </details>
-
-        <button class="secondary" id="downloadBtn" disabled>Baixar prévia (PNG)</button>
-      </div>
-
-      <div class="canvas-wrap" id="canvasWrap">
-        <div class="empty" id="emptyState">Escolhe uma forminha aí do lado<br>pra ver o <b>desenho de continhas</b>.</div>
-        <canvas id="canvas" style="display:none;"></canvas>
-      </div>
+<!-- Menu do jogo: a câmera já está ligada aqui. O canvas do webcam-scene.js
+     (js/webcam-scene.js, função startMenu) é inserido dinamicamente com os
+     três botões desenhados por cima do vídeo — aponta o dedo e segura um
+     instante em cima de um deles pra escolher, sem clicar em nada. -->
+<div id="menuScreen" hidden>
+  <div id="menuOverlay">
+    <div id="menuHud">
+      <div id="menuHint">Pedindo acesso à câmera...</div>
     </div>
-
-    <div class="meta" id="metaInfo"></div>
-
-    <div class="legend" id="legendPanel">
-      <h2>Legenda · quantas contas de cada cor</h2>
-      <div class="legend-grid" id="legendGrid"></div>
-    </div>
-
-    <div class="legend" id="historyPanel">
-      <h2>Últimas 3 concluídas</h2>
-      <div class="history-grid" id="historyGrid"></div>
+    <div id="menuControls">
+      <button id="menuFlipCameraBtn" hidden>🔄 Trocar câmera</button>
     </div>
   </div>
-</header>
+</div>
 
-<!-- Tela de RA: fica escondida até a sessão WebXR começar. O canvas do
-     three.js é inserido aqui dinamicamente. O overlay é HTML normal
-     renderizado por cima do vídeo da câmera via dom-overlay. -->
+<!-- Tela de jogo: fica escondida até a sessão de webcam começar. O canvas do
+     three.js (webcam-scene.js) é inserido aqui dinamicamente, com o vídeo da
+     câmera por baixo e este overlay de HUD por cima. -->
 <div id="arScreen" hidden>
   <div id="arOverlay">
-    <div id="arCrosshair" hidden></div>
     <div id="arHud">
       <div id="arLevel"></div>
       <div id="arProgress">0 / 0 contas</div>
-      <div id="arHint">Toca numa mesa ou no chão pra pendurar o desenho</div>
-    </div>
-    <div id="captureResHud" hidden>
-      <span id="captureResVal">16×16</span>
-      <input type="range" id="captureResSlider" min="8" max="40" value="16" step="1" orient="vertical">
-      <label for="captureResSlider">Resolução da foto</label>
+      <div id="arProgressBar"><div id="arProgressFill"></div></div>
+      <div id="arHint">Pedindo acesso à câmera...</div>
     </div>
     <div id="arControls">
       <button id="flipCameraBtn" hidden>🔄 Trocar câmera</button>
-      <button id="exitArBtn">Sair da RA</button>
+      <button id="exitArBtn">◀ Voltar</button>
     </div>
+  </div>
+</div>
+
+<!-- Confete decorativo de "categoria completa" (mesma ideia das continhas
+     flutuantes da abertura) — aparece por cima do jogo quando todas as fases
+     da categoria escolhida são concluídas (ver advanceChallenge em main.js).
+     Só decoração: pointer-events desligado no CSS. O texto de parabéns e o
+     botão "jogar de novo" de verdade são desenhados no CANVAS do próprio
+     jogo (ver showCategoryComplete em webcam-scene.js), pra continuarem
+     selecionáveis apontando-e-segurando com a mão, como o botão "voltar" —
+     um <button> HTML normal não daria pra apontar com o dedo. -->
+<div id="winScreen" hidden>
+  <div class="confetti-field" aria-hidden="true">
+    <span class="confetti-piece" style="--x:6%; --d:0s; --dur:2.6s; background:#f9c74f;"></span>
+    <span class="confetti-piece" style="--x:16%; --d:0.3s; --dur:3.1s; background:#f472b6;"></span>
+    <span class="confetti-piece" style="--x:27%; --d:0.6s; --dur:2.4s; background:#4ade80;"></span>
+    <span class="confetti-piece" style="--x:38%; --d:0.1s; --dur:2.9s; background:#1e5aa8;"></span>
+    <span class="confetti-piece" style="--x:49%; --d:0.8s; --dur:2.5s; background:#c91e2a;"></span>
+    <span class="confetti-piece" style="--x:60%; --d:0.4s; --dur:3.3s; background:#754a98;"></span>
+    <span class="confetti-piece" style="--x:71%; --d:0.9s; --dur:2.7s; background:#ed7423;"></span>
+    <span class="confetti-piece" style="--x:82%; --d:0.2s; --dur:3s; background:#f9c74f;"></span>
+    <span class="confetti-piece" style="--x:91%; --d:0.7s; --dur:2.6s; background:#4ade80;"></span>
+    <span class="confetti-piece" style="--x:12%; --d:1.2s; --dur:2.8s; background:#ed83a9;"></span>
+    <span class="confetti-piece" style="--x:64%; --d:1.4s; --dur:2.5s; background:#1e5aa8;"></span>
+    <span class="confetti-piece" style="--x:35%; --d:1.6s; --dur:3.2s; background:#f9c74f;"></span>
   </div>
 </div>
 

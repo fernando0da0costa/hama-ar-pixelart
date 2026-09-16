@@ -8,156 +8,171 @@
   --bad: #f87171;
   --text: #e6e8eb;
   --muted: #8a9099;
+  --font-pixel: 'Press Start 2P', 'Courier New', monospace;
+  --font-term: 'VT323', 'Courier New', monospace;
 }
 *{ box-sizing: border-box; }
-html, body{ margin:0; padding:0; background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; }
+html, body{
+  margin:0; padding:0; height: 100%; color: var(--text); font-family: var(--font-term);
+  background: var(--bg);
+}
 
-#setupScreen{ min-height: 100vh; padding: 28px 16px 80px; }
-#setupScreen .wrap{ max-width: 980px; margin: 0 auto; }
+/* Chão quadriculado tipo "arcade" atrás de tudo — só fica visível nas
+   frestas fora da câmera/canvas (que é full-bleed no menu/jogo), então o
+   efeito principal aparece mesmo é na tela de boas-vindas. */
+body{
+  background-image:
+    linear-gradient(rgba(249,199,79,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(249,199,79,0.05) 1px, transparent 1px);
+  background-size: 34px 34px;
+  background-position: center;
+}
+
+/* Varredura de CRT: linhas finas + vinheta bem sutil por cima de tudo — de
+   propósito bem fraca (baixa opacidade), pra dar clima retrô sem prejudicar
+   a leitura do vídeo da câmera nem o contraste dos furos/pistas de cor
+   durante o jogo. */
+#crtOverlay{
+  position: fixed; inset: 0; z-index: 40; pointer-events: none;
+  background:
+    repeating-linear-gradient(to bottom, rgba(0,0,0,0.16) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.28) 100%);
+  mix-blend-mode: multiply;
+}
+
 .eyebrow{
-  display:inline-block; font-size: 11px; letter-spacing: 3px; color: var(--bg);
-  background: var(--accent); padding: 3px 8px; margin-bottom: 12px; font-weight: 700;
+  display:inline-block; font-family: var(--font-pixel); font-size: 9px; letter-spacing: 2px; color: var(--bg);
+  background: var(--accent); padding: 5px 9px; margin-bottom: 16px; font-weight: 400;
+  box-shadow: 0 0 12px rgba(249,199,79,0.55);
 }
-h1{ font-size: clamp(24px, 4.5vw, 36px); margin: 0 0 8px; letter-spacing: -0.5px; }
+h1{ font-family: var(--font-pixel); font-size: clamp(20px, 4.5vw, 32px); margin: 0 0 8px; line-height: 1.4; }
 h1 span{ color: var(--accent-2); }
-#setupScreen > .wrap > p{ color: var(--muted); max-width: 640px; line-height: 1.5; font-size: 14px; margin: 0 0 24px; }
 
-.app{ display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
-@media (max-width: 760px){ .app{ grid-template-columns: 1fr; } }
-
-.panel{ background: var(--panel); border: 1px solid var(--grid-line); padding: 20px; }
-.panel h2{
-  font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
-  margin: 0 0 16px; border-bottom: 1px solid var(--grid-line); padding-bottom: 10px;
+/* Título com brilho neon duplo (dourado + rosa) e uma piscadela ocasional de
+   "tubo CRT esquentando" — sutil, não fica tremendo o tempo todo. */
+.glitch-title{
+  text-shadow:
+    0 0 6px rgba(249,199,79,0.85),
+    0 0 18px rgba(249,199,79,0.45),
+    0 0 30px rgba(244,114,182,0.35);
+  animation: title-flicker 5s ease-in-out infinite;
 }
-
-.advanced{ margin: 18px 0 20px; border-top: 1px solid var(--grid-line); padding-top: 12px; }
-.advanced summary{
-  cursor: pointer; font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
-  color: var(--muted);
+@keyframes title-flicker{
+  0%, 92%, 100%{ opacity: 1; }
+  94%{ opacity: 0.82; }
+  96%{ opacity: 1; }
+  97%{ opacity: 0.88; }
 }
-.advanced summary:hover{ color: var(--accent); }
-.advanced[open] summary{ color: var(--accent); margin-bottom: 14px; }
+.tagline{ font-family: var(--font-term); font-size: 17px; color: var(--muted); margin: 0 0 26px; }
 
-.drop{
-  border: 1px dashed var(--grid-line); padding: 22px 12px; text-align: center; cursor: pointer;
-  font-size: 13px; color: var(--muted); margin-bottom: 20px; display:block;
+/* Botão de música: fixo por cima de qualquer tela (boas-vindas, menu ou
+   jogo) — por isso mora fora dos containers de cada tela e tem z-index
+   maior que os três (welcomeScreen=20 é o mais alto deles), mas abaixo do
+   crtOverlay decorativo (que não recebe clique mesmo, pointer-events:none). */
+#musicToggleBtn, #mirrorToggleBtn{
+  position: fixed; bottom: 12px; z-index: 30;
+  width: 44px; height: 44px;
+  background: rgba(13,15,18,0.85); color: var(--text);
+  border: 2px solid var(--grid-line);
+  clip-path: polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);
+  font-size: 18px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
-.drop:hover, .drop.drag{ border-color: var(--accent); color: var(--accent); }
-.drop input{ display:none; }
-
-.bg-toggle{ display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-.bg-toggle input{ width: auto; accent-color: var(--accent); cursor: pointer; }
-.bg-toggle:hover{ color: var(--text); }
-
-.field{ margin-bottom: 18px; }
-.field label{ display:flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-.field label b{ color: var(--accent); font-weight: 600; }
-
-.dims{ display:flex; gap: 10px; }
-.dims input[type=number]{
-  width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--grid-line);
-  padding: 8px; font-family: inherit; font-size: 13px;
-}
-
-input[type=range]{ width: 100%; -webkit-appearance: none; height: 3px; background: var(--grid-line); outline: none; }
-input[type=range]::-webkit-slider-thumb{ -webkit-appearance: none; width: 14px; height: 14px; background: var(--accent); cursor: pointer; border-radius: 50%; }
-input[type=range]::-moz-range-thumb{ width: 14px; height: 14px; background: var(--accent); cursor: pointer; border: none; border-radius: 50%; }
-
-select{
-  width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--grid-line);
-  padding: 8px; font-family: inherit; font-size: 13px;
-}
-
-.hint{ font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 6px; }
-
-.presets{ display:flex; gap:6px; flex-wrap: wrap; margin-top: 8px; }
-.presets button{
-  background: var(--bg); border: 1px solid var(--grid-line); color: var(--muted);
-  font-family: inherit; font-size: 11px; padding: 5px 8px; cursor: pointer;
-}
-.presets button:hover{ border-color: var(--accent); color: var(--accent); }
-
-button.primary{
-  width: 100%; background: var(--accent); color: #1a1300; border: none; padding: 12px;
-  font-family: inherit; font-weight: 700; font-size: 13px; letter-spacing: 1px; text-transform: uppercase;
-  cursor: pointer; margin-top: 4px;
-}
-button.primary:disabled{ background: #3a3f47; color: #c2c6cc; cursor: not-allowed; }
-
-/* Contraste bom sem depender de :hover — celular não tem hover, então um
-   botão que só ficava visível ao passar o mouse (borda escura, texto
-   apagado) ficava permanentemente sem destaque em touchscreen. */
-button.secondary{
-  width: 100%; background: transparent; color: var(--text); border: 1px solid #454b54; padding: 9px;
-  font-family: inherit; font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
-  cursor: pointer; margin-top: 8px;
-}
-button.secondary:hover{ border-color: var(--accent); color: var(--accent); }
-button.secondary:disabled{ opacity: 0.5; color: var(--muted); border-color: var(--grid-line); cursor: not-allowed; }
-
-/* Quando RA imersiva não está disponível, "Simular" vira a única opção —
-   em vez de deixar o botão de RA cinza e desabilitado do lado (feio, parece
-   quebrado), ele some e o Simular ganha destaque visual pulsante aqui. */
-@keyframes cta-pulse{
-  0%, 100%{ box-shadow: 0 0 0 0 rgba(249,199,79,0.45); }
-  50%{ box-shadow: 0 0 0 9px rgba(249,199,79,0); }
-}
-button.cta-pulse{ animation: cta-pulse 1.8s ease-out infinite; }
-
-.crop-wrap{
-  position: relative; background: var(--bg); border: 1px solid var(--grid-line);
-  display:flex; align-items:center; justify-content:center; margin-bottom: 10px;
-  touch-action: none; min-height: 120px;
-}
-#cropCanvas{ display:block; max-width: 100%; }
-.crop-empty{ color: var(--muted); font-size: 12px; padding: 30px 10px; text-align:center; }
-
-.original-wrap{
-  background: var(--bg); border: 1px solid var(--grid-line); display:flex; align-items:center;
-  justify-content:center; margin-bottom: 6px; min-height: 100px; max-height: 180px; overflow: hidden;
-}
-#originalSample{ display:block; max-width: 100%; max-height: 180px; object-fit: contain; }
-
-.canvas-wrap{
-  background: var(--panel); border: 1px solid var(--grid-line); min-height: 420px;
-  display:flex; align-items:center; justify-content:center; padding: 20px; overflow:auto;
-}
-#canvas{ image-rendering: pixelated; max-width: 100%; }
-
-.empty{ color: var(--muted); font-size: 13px; text-align:center; padding: 20px; }
-.empty b{ color: var(--accent-2); }
-
-.legend{ margin: 20px 0 0; background: var(--panel); border: 1px solid var(--grid-line); padding: 18px 20px; display:none; }
-.legend h2{
-  font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
-  margin: 0 0 14px; border-bottom: 1px solid var(--grid-line); padding-bottom: 10px;
-}
-.legend-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
-.legend-item{ display:flex; align-items:center; gap:8px; font-size: 12px; }
-.swatch{ width: 18px; height: 18px; border-radius: 50%; flex-shrink:0; border: 1px solid rgba(255,255,255,0.15); }
-.legend-item b{ color: var(--text); }
-.legend-item span{ color: var(--muted); }
-
-.meta{ margin: 14px 0 0; font-size: 11px; color: var(--muted); display:flex; gap: 20px; flex-wrap: wrap; }
-.meta span b{ color: var(--text); }
-
-.history-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 14px; }
-.history-card{
-  background: var(--bg); border: 1px solid var(--grid-line); padding: 8px;
-  display:flex; flex-direction: column; align-items:center; gap: 6px;
-}
-.history-card img{ width: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; background: var(--panel); }
-.history-card .name{ font-size: 11px; text-align:center; color: var(--text); }
-.history-card .date{ font-size: 10px; color: var(--muted); }
-.history-card button{
-  background: none; border: 1px solid var(--grid-line); color: var(--muted);
-  font-family: inherit; font-size: 10px; letter-spacing: 0.5px; padding: 4px 8px; cursor: pointer; width: 100%;
-}
-.history-card button:hover{ border-color: var(--accent); color: var(--accent); }
+#musicToggleBtn{ left: 12px; }
+#mirrorToggleBtn{ left: 64px; }
+#musicToggleBtn:hover, #mirrorToggleBtn:hover{ border-color: var(--accent); color: var(--accent); box-shadow: 0 0 14px rgba(249,199,79,0.5); }
+#musicToggleBtn:active, #mirrorToggleBtn:active{ transform: scale(0.92); }
+#mirrorToggleBtn.is-off{ opacity: 0.55; }
 
 /* ------------------------------------------------------------------ */
-/* Tela / overlay de RA                                                */
+/* Boas-vindas                                                         */
+/* ------------------------------------------------------------------ */
+
+#welcomeScreen{
+  position: fixed; inset: 0; z-index: 20; background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  transition: opacity 0.4s ease;
+}
+#welcomeScreen.fade-out{ opacity: 0; pointer-events: none; }
+.welcome-card{ position: relative; z-index: 1; text-align: center; padding: 20px; }
+.welcome-card h1{ font-size: clamp(26px, 7vw, 40px); margin: 10px 0 10px; }
+
+/* Continhas Hama flutuando bem de fundo, subindo devagar e desaparecendo —
+   só decoração (aria-hidden, pointer-events desligado), reforça o tema
+   "montar continhas" já na primeira tela em vez de só texto estático. */
+.bead-field{ position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.bead-float{
+  position: absolute; left: var(--x); bottom: -40px;
+  width: 16px; height: 16px; border-radius: 50%;
+  box-shadow: inset -2px -2px 3px rgba(0,0,0,0.35), 0 0 10px currentColor;
+  opacity: 0;
+  animation: bead-rise var(--dur) ease-in infinite;
+  animation-delay: var(--d);
+}
+@keyframes bead-rise{
+  0%{ transform: translateY(0) translateX(0); opacity: 0; }
+  8%{ opacity: 0.85; }
+  50%{ transform: translateY(-46vh) translateX(10px); }
+  92%{ opacity: 0.5; }
+  100%{ transform: translateY(-92vh) translateX(-6px); opacity: 0; }
+}
+
+/* Barra de "carregando" tipo equalizador de fliperama: 5 barrinhas subindo
+   e descendo fora de fase, em vez das 3 bolinhas simples de antes. */
+.loader{ display: flex; gap: 6px; align-items: flex-end; justify-content: center; height: 26px; margin: 0 0 18px; }
+.loader span{
+  width: 8px; height: 8px; background: var(--accent);
+  animation: loader-bar 0.9s ease-in-out infinite;
+}
+.loader span:nth-child(1){ animation-delay: 0s; background: var(--accent); }
+.loader span:nth-child(2){ animation-delay: 0.1s; background: var(--accent-2); }
+.loader span:nth-child(3){ animation-delay: 0.2s; background: var(--ok); }
+.loader span:nth-child(4){ animation-delay: 0.3s; background: var(--accent-2); }
+.loader span:nth-child(5){ animation-delay: 0.4s; background: var(--accent); }
+@keyframes loader-bar{
+  0%, 100%{ height: 8px; opacity: 0.6; }
+  50%{ height: 26px; opacity: 1; }
+}
+#welcomeStatus{ font-family: var(--font-term); color: var(--muted); font-size: 18px; letter-spacing: 1px; }
+#welcomeStatus::after{
+  content: '_'; margin-left: 3px; color: var(--accent);
+  animation: caret-blink 1s step-end infinite;
+}
+@keyframes caret-blink{ 50%{ opacity: 0; } }
+
+/* ------------------------------------------------------------------ */
+/* Menu do jogo — câmera ligada, botões desenhados por cima do vídeo    */
+/* (webcam-scene.js/startMenu). Este HUD só mostra a dica de texto e o  */
+/* botão de trocar câmera; os três botões de escolha em si são canvas,  */
+/* não HTML.                                                            */
+/* ------------------------------------------------------------------ */
+
+#menuScreen{ position: fixed; inset: 0; z-index: 15; background: #000; }
+#menuScreen[hidden]{ display: none; }
+
+#menuOverlay{
+  position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  display: flex; flex-direction: column; justify-content: space-between; align-items: center;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  font-family: var(--font-term);
+}
+#menuHud{
+  background: rgba(13,15,18,0.8);
+  border: 2px solid var(--grid-line);
+  clip-path: polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+  padding: 10px 18px;
+  text-align: center;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 0 16px rgba(0,0,0,0.4);
+}
+#menuHint{ font-size: 16px; color: var(--muted); max-width: 320px; }
+
+#menuControls{ display: flex; gap: 8px; pointer-events: none; }
+
+/* ------------------------------------------------------------------ */
+/* Tela / overlay do jogo                                              */
 /* ------------------------------------------------------------------ */
 
 #arScreen{ position: fixed; inset: 0; z-index: 10; }
@@ -167,64 +182,40 @@ button.cta-pulse{ animation: cta-pulse 1.8s ease-out infinite; }
   position: fixed; inset: 0; z-index: 1; pointer-events: none;
   display:flex; flex-direction: column; justify-content: space-between;
   padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-term);
 }
-
-/* Mira central — mostra pra onde a câmera está apontando antes do toque,
-   já que sem mão de verdade a interação é "aponta o celular e toca em
-   qualquer lugar da tela" (o toque sempre mira o centro da câmera, não o
-   ponto exato do dedo na tela). Verde quando tem uma conta/furo "no alvo",
-   amarelo quando não tem nada ali ainda. */
-#arCrosshair{
-  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  width: 28px; height: 28px; pointer-events: none; z-index: 2;
-}
-#arCrosshair[hidden]{ display: none; }
-#arCrosshair::before, #arCrosshair::after{
-  content: ''; position: absolute; background: var(--accent);
-  transition: background 0.1s;
-}
-#arCrosshair::before{ left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
-#arCrosshair::after{ top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
-#arCrosshair.hover::before, #arCrosshair.hover::after{ background: var(--ok); }
 
 #arHud{
   align-self: flex-start;
-  background: rgba(13,15,18,0.75);
-  border: 1px solid var(--grid-line);
-  padding: 10px 14px;
+  background: rgba(13,15,18,0.8);
+  border: 2px solid var(--grid-line);
+  clip-path: polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+  padding: 10px 16px;
   pointer-events: none;
   backdrop-filter: blur(4px);
+  box-shadow: 0 0 16px rgba(0,0,0,0.4);
+  min-width: 200px;
 }
-#arLevel{ font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+#arLevel{ font-family: var(--font-pixel); font-size: 10px; font-weight: 400; color: var(--muted); letter-spacing: 0.5px; line-height: 1.6; }
 #arLevel:empty{ display: none; }
-#arProgress{ font-size: 15px; font-weight: 700; color: var(--accent); }
-#arHint{ font-size: 12px; color: var(--muted); margin-top: 4px; max-width: 260px; }
+#arProgress{ font-size: 19px; font-weight: 700; color: var(--accent); margin-top: 2px; }
 
-/* Barra de resolução da captura de foto — só na sala 3D, fixa na lateral
-   direita da tela, como um controle de câmera (tipo zoom), vertical. */
-#captureResHud{
-  position: fixed; right: 16px; top: 50%; transform: translateY(-50%);
-  z-index: 2; pointer-events: all;
-  background: rgba(13,15,18,0.85); border: 1px solid var(--grid-line);
-  padding: 12px 8px; backdrop-filter: blur(4px);
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
+/* Barra de progresso tipo "barra de vida" de videogame — o preenchimento
+   (#arProgressFill, largura controlada por main.js) tem uma textura de
+   segmentos (repeating-linear-gradient) por cima, pra parecer blocos em vez
+   de um gradiente liso. */
+#arProgressBar{
+  margin-top: 6px; height: 12px; width: 100%;
+  background: #05070a; border: 2px solid var(--grid-line);
+  box-shadow: inset 0 0 4px rgba(0,0,0,0.6);
 }
-#captureResHud[hidden]{ display: none; }
-#captureResVal{ font-size: 12px; font-weight: 700; color: var(--accent); }
-#captureResSlider{
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  writing-mode: vertical-lr;
-  width: 20px; height: 120px;
-  accent-color: var(--accent);
-  cursor: pointer;
+#arProgressFill{
+  height: 100%; width: 0%; background: var(--ok);
+  background-image: repeating-linear-gradient(90deg, rgba(0,0,0,0.18) 0 3px, transparent 3px 9px);
+  box-shadow: 0 0 8px rgba(74,222,128,0.7);
+  transition: width 0.35s ease-out;
 }
-#captureResHud label{
-  font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
-  writing-mode: vertical-rl; text-orientation: mixed;
-  max-height: 90px;
-}
+#arHint{ font-size: 15px; color: var(--muted); margin-top: 6px; max-width: 260px; }
 
 #arControls{
   align-self: flex-end;
@@ -233,15 +224,47 @@ button.cta-pulse{ animation: cta-pulse 1.8s ease-out infinite; }
   pointer-events: none;
 }
 
-#exitArBtn, #flipCameraBtn{
+#exitArBtn, #flipCameraBtn, #menuFlipCameraBtn{
   pointer-events: all;
-  background: rgba(13,15,18,0.85);
+  background: rgba(13,15,18,0.88);
   color: var(--text);
-  border: 1px solid var(--grid-line);
+  border: 2px solid var(--grid-line);
+  clip-path: polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
   padding: 10px 16px;
-  font-family: inherit; font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+  font-family: var(--font-pixel); font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
   cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
-#exitArBtn:hover{ border-color: var(--bad); color: var(--bad); }
-#flipCameraBtn:hover{ border-color: var(--accent); color: var(--accent); }
-#flipCameraBtn[hidden]{ display: none; }
+#exitArBtn:hover{ border-color: var(--bad); color: var(--bad); box-shadow: 0 0 14px rgba(248,113,113,0.5); }
+#flipCameraBtn:hover, #menuFlipCameraBtn:hover{ border-color: var(--accent); color: var(--accent); box-shadow: 0 0 14px rgba(249,199,79,0.5); }
+#exitArBtn:active, #flipCameraBtn:active, #menuFlipCameraBtn:active{ transform: scale(0.96); }
+#flipCameraBtn[hidden], #menuFlipCameraBtn[hidden]{ display: none; }
+
+/* ------------------------------------------------------------------ */
+/* Tela de "categoria completa" — por cima do jogo (ver #arScreen),     */
+/* aparece quando todas as fases da categoria escolhida são vencidas.   */
+/* ------------------------------------------------------------------ */
+
+/* Puro confete decorativo — o texto de parabéns e o botão "jogar de novo"
+   de verdade agora são desenhados no canvas do jogo (ver drawWinScreen em
+   webcam-scene.js), pra ficarem selecionáveis por gesto de mão. Por isso
+   pointer-events:none aqui: nunca deve bloquear clique/toque em nada por
+   baixo (nem o próprio canvas, nem o botão "◀ Voltar"). */
+#winScreen{
+  position: fixed; inset: 0; z-index: 25; /* acima do #arScreen (10), abaixo do crtOverlay (40) */
+  pointer-events: none;
+  overflow: hidden;
+}
+#winScreen[hidden]{ display: none; }
+
+.confetti-field{ position: absolute; inset: 0; }
+.confetti-piece{
+  position: absolute; left: var(--x); top: -24px;
+  width: 10px; height: 16px; opacity: 0.9;
+  animation: confetti-fall var(--dur) linear infinite;
+  animation-delay: var(--d);
+}
+@keyframes confetti-fall{
+  0%{ transform: translateY(-24px) rotate(0deg); opacity: 0.95; }
+  100%{ transform: translateY(105vh) rotate(540deg); opacity: 0.7; }
+}

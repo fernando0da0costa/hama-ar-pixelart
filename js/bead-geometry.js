@@ -1,6 +1,6 @@
-// Geometria da conta de verdade, compartilhada entre a cena de RA imersiva
-// (ar-scene.js) e a cena webcam (webcam-scene.js). Uma conta Hama/Perler não
-// é uma esfera: é um tubo furado (perfil revolucionado em torno do eixo Y),
+// Geometria da conta de verdade, usada pela cena webcam (webcam-scene.js).
+// Uma conta Hama/Perler não é uma esfera: é um tubo furado (perfil
+// revolucionado em torno do eixo Y),
 // com um furo passante no meio pra "empalhar" na grade/pino — LatheGeometry
 // com um perfil em U aberto gera exatamente essa forma, sem precisar de CSG
 // (subtração booleana).
