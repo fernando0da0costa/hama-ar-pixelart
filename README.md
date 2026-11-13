@@ -119,3 +119,18 @@ hama-ar/
   não há ainda problema de conta (soma) nem sequência de palavra completa.
 - O recurso de subir uma foto própria (upload/recorte/paleta automática)
   ficou fora do fluxo principal por enquanto — ver nota em "Estrutura" acima.
+
+## Medições (instrumentação para o artigo)
+
+Abra a página com `?metrics=1` no fim da URL (ex.: `https://fernando0da0costa.github.io/hama-ar-pixelart/?metrics=1`).
+Sem esse parâmetro nada é registrado e o jogo fica idêntico.
+
+Com ele ligado aparece um painel no canto inferior esquerdo com: inferência do MediaPipe P50/P95 (ms),
+FPS médio, distância da pinça normalizada (d/L), alternâncias da pinça por segundo nos últimos 5 s
+(RNF3) e o P95 do retorno visual de encaixe (RNF2). O botão **baixar CSV** salva todos os quadros e
+eventos; **zerar** recomeça a contagem. No console: `hamaMetrics.summary()` e `hamaMetrics.download()`
+(no celular, via `chrome://inspect`).
+
+- O 1º quadro com inferência inclui a inicialização do modelo: ele aparece no CSV com `aquecimento=1` e fica fora do resumo.
+- `feedback_ms` mede do início do quadro em que a pinça foi interpretada até o fim do desenho desse quadro; não inclui a latência da câmera nem a da tela. Encaixes feitos com o mouse aparecem como `acerto-mouse`/`erro-mouse` e ficam fora do P95.
+- Protocolo do RNF3: zerar, manter a distância polegar↔indicador perto do limiar (d/L ≈ 0,075) por 5 s e ler “alternâncias/s”.

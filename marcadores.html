@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hama AR — Folha de marcadores</title>
+<style>
+  /* A folha é desenhada em milímetros reais: imprimir em A4 DEITADO, escala
+     100% ("tamanho real", sem "ajustar à página"). A régua de 50 mm serve pra
+     conferir a escala; se não bater, o botão "Ajustar grade" do jogo corrige. */
+  @page { size: A4 landscape; margin: 0; }
+  html, body { margin: 0; background: #ddd; font-family: sans-serif; }
+  .sheet { position: relative; width: 297mm; height: 210mm; background: #fff; margin: 12px auto; overflow: hidden; }
+  .marker { position: absolute; width: 35mm; height: 35mm; }
+  .marker svg { width: 100%; height: 100%; display: block; shape-rendering: crispEdges; }
+  .grid { position: absolute; border: 0.3mm dashed #999; box-sizing: border-box; }
+  .pin { position: absolute; width: 1.2mm; height: 1.2mm; margin: -0.6mm 0 0 -0.6mm; border-radius: 50%; background: #c8c8c8; }
+  .ruler { position: absolute; left: 60mm; top: 196mm; width: 50mm; height: 2mm; background: #000; }
+  .label { position: absolute; font-size: 3mm; color: #555; }
+  .help { max-width: 760px; margin: 0 auto 24px; padding: 0 16px; line-height: 1.5; }
+  @media print { html, body { background: #fff; } .sheet { margin: 0; } .help { display: none; } }
+</style>
+</head>
+<body>
+<div class="sheet" id="sheet"></div>
+
+<div class="help">
+  <h2>Como usar</h2>
+  <ol>
+    <li>Imprima em A4 <b>deitado</b>, escala <b>100%</b>. Confira a régua: deve medir 50 mm.</li>
+    <li>Coloque a placa perfurada no meio da folha, com a área 8×8 sobre o quadrado tracejado, sem cobrir os quatro marcadores.
+      Padrão: contas Maxi (passo 10 mm). Para Midi, abra esta página e o jogo com <code>?passo=5</code>.</li>
+    <li>Prenda a câmera (webcam ou celular) acima da folha, olhando para baixo, de modo que os quatro marcadores apareçam.</li>
+    <li>No jogo, ligue <b>🧩 Placa real</b> no menu. Se a grade não cair exatamente sobre os pinos, use <b>📐 Ajustar grade</b> e toque nos 4 pinos dos cantos da área 8×8.</li>
+  </ol>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
+<script type="module">
+  import { MARKER_CENTERS_MM, MARKER_MM, MARKER_DICTIONARY, GRID_N, gridPitchMm, defaultGridCornersMm } from './js/board-sheet.js';
+
+  const sheet = document.getElementById('sheet');
+  const dict = new window.AR.Dictionary(MARKER_DICTIONARY);
+
+  for (const [id, [cx, cy]] of Object.entries(MARKER_CENTERS_MM)) {
+    const el = document.createElement('div');
+    el.className = 'marker';
+    el.style.left = `${cx - MARKER_MM / 2}mm`;
+    el.style.top = `${cy - MARKER_MM / 2}mm`;
+    el.innerHTML = dict.generateSVG(Number(id));
+    sheet.appendChild(el);
+  }
+
+  const pitch = gridPitchMm();
+  const [[x0, y0]] = defaultGridCornersMm(pitch);
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+  Object.assign(grid.style, {
+    left: `${x0 - pitch / 2}mm`, top: `${y0 - pitch / 2}mm`,
+    width: `${GRID_N * pitch}mm`, height: `${GRID_N * pitch}mm`,
+  });
+  sheet.appendChild(grid);
+  for (let gy = 0; gy < GRID_N; gy++) {
+    for (let gx = 0; gx < GRID_N; gx++) {
+      const pin = document.createElement('div');
+      pin.className = 'pin';
+      pin.style.left = `${x0 + gx * pitch}mm`;
+      pin.style.top = `${y0 + gy * pitch}mm`;
+      sheet.appendChild(pin);
+    }
+  }
+
+  const ruler = document.createElement('div');
+  ruler.className = 'ruler';
+  const label = document.createElement('div');
+  label.className = 'label';
+  label.style.left = '60mm';
+  label.style.top = '190mm';
+  label.textContent = `50 mm · Hama AR · passo ${pitch} mm`;
+  sheet.append(ruler, label);
+</script>
+</body>
+</html>

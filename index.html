@@ -59,6 +59,11 @@
     </div>
     <div id="menuControls">
       <button id="menuFlipCameraBtn" hidden>🔄 Trocar câmera</button>
+      <!-- Modo placa física: câmera acima de uma placa Hama real apoiada na
+           folha de marcadores (marcadores.html). -->
+      <button id="boardModeBtn">🧩 Placa real: desligada</button>
+      <a id="markersLink" href="marcadores.html" target="_blank" rel="noopener">🖨️ Folha de marcadores</a>
+      <a id="xrLink" href="hama-xr.html">🥽 AR na mesa (celular)</a>
     </div>
   </div>
 </div>
@@ -76,6 +81,8 @@
     </div>
     <div id="arControls">
       <button id="flipCameraBtn" hidden>🔄 Trocar câmera</button>
+      <button id="calibrateBtn" hidden>🎨 Calibrar cores</button>
+      <button id="adjustGridBtn" hidden>📐 Ajustar grade</button>
       <button id="exitArBtn">◀ Voltar</button>
     </div>
   </div>
@@ -114,6 +121,10 @@
   }
 }
 </script>
+<!-- js-aruco2 (scripts clássicos, expõem window.AR): detecção dos
+     marcadores da folha no modo placa física. -->
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

@@ -4,6 +4,18 @@ import { LETTER_SHAPES } from './shapes/letters.js';
 import { NUMBER_SHAPES } from './shapes/numbers.js';
 import { primeAudio, startMusic, isMusicEnabled, toggleMusic, setMusicIntensity, triggerMusicFlourish } from './sound.js';
 import { isCompleted, markCompleted } from './progress.js';
+import { startBoard, exitBoard, flipBoardCamera, showBoardComplete, calibrateColors, startGridAdjust } from './board-scene.js';
+
+// Modo placa física (câmera acima de uma placa Hama real com a folha de
+// marcadores — ver marcadores.html e board-scene.js) × modo virtual (contas
+// desenhadas sobre o vídeo). Padrão: modo virtual. Escolha persistida; ?placa=1 / ?placa=0 forçam um dos modos.
+const BOARD_MODE_KEY = 'hama-ar:board-mode-v2';
+let boardMode = (() => {
+  const q = new URLSearchParams(location.search).get('placa');
+  if (q === '1') return true;
+  if (q === '0') return false;
+  try { return localStorage.getItem(BOARD_MODE_KEY) === '1'; } catch { return false; }
+})();
 
 // Três joguinhos, cada um com sua própria lista de formas (mesmo esquema de
 // bitmap de contas) — escolhidos apontando/segurando o dedo num dos botões
@@ -34,6 +46,9 @@ const flipCameraBtn = document.getElementById('flipCameraBtn');
 const arLevel = document.getElementById('arLevel');
 const musicToggleBtn = document.getElementById('musicToggleBtn');
 const mirrorToggleBtn = document.getElementById('mirrorToggleBtn');
+const boardModeBtn = document.getElementById('boardModeBtn');
+const calibrateBtn = document.getElementById('calibrateBtn');
+const adjustGridBtn = document.getElementById('adjustGridBtn');
 const winScreen = document.getElementById('winScreen'); // só o confete decorativo (pointer-events:none) — o texto/botão de "jogar de novo" agora são desenhados no canvas do jogo (ver showCategoryComplete), pra serem selecionáveis por gesto de mão igual ao botão "voltar"
 
 let currentPattern = null;
@@ -152,11 +167,12 @@ function selectCategory(category) {
 
 function makeSceneCallbacks() {
   return {
-    onProgress: (placed, correct, total) => {
+    onProgress: (placed, correct, total, extra = 0) => {
       arProgress.textContent = `${placed} / ${total} contas · ${correct} corretas`;
       arProgressFill.style.width = `${total > 0 ? (correct / total) * 100 : 0}%`;
       if (total > 0) setMusicIntensity(correct / total);
-      const done = total > 0 && correct === total;
+      // no modo placa, conta fora do desenho (extra) também impede concluir
+      const done = total > 0 && correct === total && extra === 0;
       if (done && currentPattern?.name) markCompleted(currentPattern.name);
       if (done) triggerMusicFlourish();
       if (done && !advancingChallenge) advanceChallenge();
@@ -181,7 +197,10 @@ async function enterGame() {
   try {
     arScreen.hidden = false;
     flipCameraBtn.hidden = false;
-    await startWebcam(currentPattern, makeSceneCallbacks(), arScreen, challengeIndex);
+    calibrateBtn.hidden = !boardMode;
+    adjustGridBtn.hidden = !boardMode;
+    if (boardMode) await startBoard(currentPattern, makeSceneCallbacks(), arScreen, challengeIndex);
+    else await startWebcam(currentPattern, makeSceneCallbacks(), arScreen, challengeIndex);
   } catch (err) {
     console.error('Falha ao iniciar:', err);
     alert('Não foi possível iniciar: ' + err.message);
@@ -198,7 +217,7 @@ async function advanceChallenge() {
   if (isLast) {
     arHint.textContent = 'Você completou todos os níveis! 🎉';
     winScreen.hidden = false; // só o confete decorativo — texto/botão ficam no canvas (showCategoryComplete)
-    showCategoryComplete();
+    if (boardMode) showBoardComplete(); else showCategoryComplete();
     advancingChallenge = false; // deixa "◀ Voltar" continuar funcionando por baixo da tela de vitória
     return;
   }
@@ -209,13 +228,30 @@ async function advanceChallenge() {
   currentPattern = challengeOrder[challengeIndex];
   updateChallengeUI();
 
-  exitWebcam();
+  exitGame();
 
   advancingChallenge = false; // precisa cair antes do enterGame reengatar makeSceneCallbacks
   await enterGame();
 }
 
-exitArBtn.addEventListener('click', exitWebcam);
+function exitGame() {
+  if (boardMode) exitBoard(); else exitWebcam();
+}
 
-flipCameraBtn.addEventListener('click', flipCamera);
+exitArBtn.addEventListener('click', exitGame);
+
+flipCameraBtn.addEventListener('click', () => (boardMode ? flipBoardCamera() : flipCamera()));
+calibrateBtn.addEventListener('click', calibrateColors);
+adjustGridBtn.addEventListener('click', startGridAdjust);
+
+function updateBoardModeBtnLabel() {
+  boardModeBtn.textContent = boardMode ? '🧩 Placa real: LIGADA' : '🧩 Placa real: desligada';
+  boardModeBtn.classList.toggle('is-off', !boardMode);
+}
+updateBoardModeBtnLabel();
+boardModeBtn.addEventListener('click', () => {
+  boardMode = !boardMode;
+  try { localStorage.setItem(BOARD_MODE_KEY, boardMode ? '1' : '0'); } catch { /* ok */ }
+  updateBoardModeBtnLabel();
+});
 menuFlipCameraBtn.addEventListener('click', flipCamera);

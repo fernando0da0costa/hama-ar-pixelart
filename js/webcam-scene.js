@@ -14,6 +14,7 @@ import {
 import * as THREE from 'three';
 import { createBeadGeometry } from './bead-geometry.js';
 import { playPickup, playCorrect, playWrong, playComplete, playBeeSteal, playBeeSwat } from './sound.js';
+import { beginFrame, endFrame, recordInference, recordPinch, recordFeedback } from './metrics.js';
 
 const PINCH_THRESHOLD_RATIO = 0.075; // distância polegar↔indicador, como fração da largura do vídeo — mais generoso que o original (0.055) pra facilitar fechar a pinça
 const HAND_LOST_GRACE_MS = 400; // tolera a mão sumir um pouco (borda da tela, oclusão) sem soltar a pinça sozinho
@@ -561,6 +562,13 @@ function addCellBead(cell) {
   cellBeadGroup.add(cell.beadMesh);
 }
 
+// Compartilhado com o modo placa física (board-scene.js) — um único modelo
+// carregado pra sessão inteira.
+export async function getHandLandmarker() {
+  await ensureHandLandmarker();
+  return handLandmarker;
+}
+
 async function ensureHandLandmarker() {
   if (handLandmarker) return;
   const filesetResolver = await FilesetResolver.forVisionTasks(
@@ -702,8 +710,11 @@ function buildBoardLayout() {
 
 function loop() {
   if (!running) return;
+  beginFrame();
   if (video.readyState >= 2 && handLandmarker) {
-    const result = handLandmarker.detectForVideo(video, performance.now());
+    const t0 = performance.now();
+    const result = handLandmarker.detectForVideo(video, t0);
+    recordInference(performance.now() - t0);
     processHands(result);
   }
   // processHands pode ter chamado exitWebcam/exitMenu no meio (botão de
@@ -713,6 +724,7 @@ function loop() {
   if (!running) return;
   updateBees(performance.now());
   draw();
+  endFrame();
   rafId = requestAnimationFrame(loop);
 }
 
@@ -762,6 +774,7 @@ function processHands(result) {
 
     const wasPinching = state.pinching;
     state.pinching = dist < pinchThreshold;
+    recordPinch(dist / vw, state.pinching);
     state.midpoint = { x: (tx + ix) / 2, y: (ty + iy) / 2 };
     updatePincerMarkers(state, tx, ty, ix, iy, vw);
 
@@ -1049,6 +1062,7 @@ function fillCell(cell, legendIdx) {
   if (entry.name !== cell.target.name) {
     cell.rejectedUntil = performance.now() + 350;
     playWrong();
+    recordFeedback('erro');
     return;
   }
   if (cell.filled) return;
@@ -1057,6 +1071,7 @@ function fillCell(cell, legendIdx) {
   cell.paintR = entry.r; cell.paintG = entry.g; cell.paintB = entry.b;
   addCellBead(cell);
   playCorrect();
+  recordFeedback('acerto');
   lastActivityAt = performance.now(); // colocou uma conta agora — reseta o "relógio de demora" das abelhas
   reportProgress();
 }

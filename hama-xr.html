@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Hama AR — Placa na mesa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0d0f12; --panel: rgba(13,15,18,0.82); --line: #2a2f37; --text: #e6e8eb; --muted: #9aa3ad; --accent: #f9c74f; --ok: #4ade80; --bad: #f87171; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: 'VT323', monospace; }
+  #intro { max-width: 560px; margin: 0 auto; padding: max(20px, env(safe-area-inset-top)) 16px 32px; text-align: center; }
+  #intro h1 { font-family: 'Press Start 2P', monospace; font-size: 26px; margin: 18px 0 6px; color: var(--text); }
+  #intro h1 span { color: #f472b6; }
+  .tag { font-family: 'Press Start 2P', monospace; font-size: 9px; color: #111; background: var(--accent); display: inline-block; padding: 4px 8px; }
+  #intro p { font-size: 20px; color: var(--muted); line-height: 1.15; }
+  .cats { display: grid; gap: 12px; margin: 18px 0; }
+  .cat { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: #161a20; border: 2px solid var(--accent); border-radius: 14px; color: var(--text); font-family: 'Press Start 2P', monospace; font-size: 13px; text-align: left; cursor: pointer; }
+  .cat:disabled { opacity: 0.45; }
+  .cat .ico { font-size: 30px; }
+  .cat small { display: block; margin-top: 6px; font-family: 'VT323', monospace; font-size: 17px; color: var(--muted); }
+  #status { font-size: 19px; color: var(--muted); min-height: 24px; }
+  .links { margin-top: 16px; font-size: 18px; }
+  .links a { color: var(--accent); }
+
+  #overlay { position: fixed; inset: 0; pointer-events: none; display: none; font-family: 'VT323', monospace; }
+  #hud { position: absolute; top: max(8px, env(safe-area-inset-top)); left: 8px; right: 8px; background: var(--panel); border: 2px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+  #lvl { font-family: 'Press Start 2P', monospace; font-size: 9px; color: var(--muted); line-height: 1.5; }
+  #prog { font-size: 22px; color: var(--accent); font-weight: 700; }
+  #bar { height: 8px; background: #05070a; border: 2px solid var(--line); margin-top: 4px; }
+  #fill { height: 100%; width: 0; background: var(--ok); transition: width .3s; }
+  #hint { font-size: 19px; color: var(--text); margin-top: 4px; line-height: 1.1; }
+  #ctrl { position: absolute; left: 8px; right: 8px; bottom: max(10px, env(safe-area-inset-bottom)); display: flex; gap: 6px; justify-content: space-between; pointer-events: all; }
+  #ctrl button, #endBox button { font-family: 'Press Start 2P', monospace; font-size: 9px; padding: 11px 10px; border-radius: 10px; border: 2px solid var(--line); background: var(--panel); color: var(--text); }
+  #ctrl #exitBtn { border-color: var(--bad); color: var(--bad); }
+  #endBox { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); background: var(--panel); border: 2px solid var(--accent); border-radius: 14px; padding: 16px; text-align: center; pointer-events: all; display: none; width: min(86vw, 360px); }
+  #endBox h2 { font-family: 'Press Start 2P', monospace; font-size: 13px; color: var(--accent); margin: 0 0 12px; line-height: 1.5; }
+  #endBox button { margin: 4px; border-color: var(--accent); color: var(--accent); }
+  #diag { position: absolute; top: 120px; left: 8px; right: 8px; background: rgba(0,0,0,.7); padding: 6px 8px; border-radius: 8px; font: 11px/1.3 ui-monospace, monospace; white-space: pre-wrap; display: none; }
+  #dots { position: absolute; inset: 0; width: 100%; height: 100%; display: none; }
+</style>
+</head>
+<body>
+<div id="intro">
+  <span class="tag">RA · MÃOS · CONTAS</span>
+  <h1>Hama <span>AR</span></h1>
+  <p>A placa aparece em cima da <b>sua mesa</b>. Pegue as contas da bandeja com a <b>pinça</b> (polegar + indicador) e encaixe no pino certo.</p>
+  <div class="cats">
+    <button class="cat" data-cat="hama" disabled><span class="ico">🧶</span><span>HAMA<small id="c-hama"></small></span></button>
+    <button class="cat" data-cat="matematica" disabled><span class="ico">🔢</span><span>MATEMÁTICA<small id="c-matematica"></small></span></button>
+    <button class="cat" data-cat="palavras" disabled><span class="ico">🔤</span><span>PALAVRAS<small id="c-palavras"></small></span></button>
+  </div>
+  <div id="status">Carregando o rastreador de mãos…</div>
+  <div class="links"><a href="index.html">Versão na webcam (sem AR)</a></div>
+</div>
+
+<div id="overlay">
+  <canvas id="dots"></canvas>
+  <div id="hud">
+    <div id="lvl"></div>
+    <div id="prog">0 / 0 contas</div>
+    <div id="bar"><div id="fill"></div></div>
+    <div id="hint">Procure a mesa: mova o celular devagar.</div>
+    <div id="handSt" style="font-size:16px;color:#9aa3ad;margin-top:2px;">mão: – · pinça: –</div>
+  </div>
+  <div id="diag"></div>
+  <div id="demo" style="position:absolute; left:50%; top:46%; transform:translate(-50%,-50%); text-align:center; display:none;">
+    <div id="demoHand" style="font-size:64px; line-height:1;">🖐️</div>
+    <div style="font-family:'Press Start 2P',monospace; font-size:10px; color:#f9c74f; background:rgba(13,15,18,.75); padding:6px 8px; border-radius:8px; margin-top:6px;">pinça uma continha assim!</div>
+  </div>
+  <div id="endBox">
+    <h2>🎉 Categoria completa!</h2>
+    <button id="againBtn">Jogar de novo</button>
+    <button id="menuBtn">Menu</button>
+  </div>
+  <div id="ctrl">
+    <button id="exitBtn">◀ Sair</button>
+    <button id="placeBtn">📍 Reposicionar</button>
+    <button id="musicBtn">🔊</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module" src="js/xr-game.js"></script>
+</body>
+</html>
