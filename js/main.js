@@ -8,14 +8,10 @@ import { startBoard, exitBoard, flipBoardCamera, showBoardComplete, calibrateCol
 
 // Modo placa física (câmera acima de uma placa Hama real com a folha de
 // marcadores — ver marcadores.html e board-scene.js) × modo virtual (contas
-// desenhadas sobre o vídeo). Padrão: modo virtual. Escolha persistida; ?placa=1 / ?placa=0 forçam um dos modos.
+// desenhadas sobre o vídeo). Padrão: modo virtual. O botão do menu foi
+// retirado; o modo placa física só abre com ?placa=1 na URL (uso de teste).
 const BOARD_MODE_KEY = 'hama-ar:board-mode-v2';
-let boardMode = (() => {
-  const q = new URLSearchParams(location.search).get('placa');
-  if (q === '1') return true;
-  if (q === '0') return false;
-  try { return localStorage.getItem(BOARD_MODE_KEY) === '1'; } catch { return false; }
-})();
+let boardMode = new URLSearchParams(location.search).get('placa') === '1';
 
 // Três joguinhos, cada um com sua própria lista de formas (mesmo esquema de
 // bitmap de contas) — escolhidos apontando/segurando o dedo num dos botões
@@ -245,11 +241,12 @@ calibrateBtn.addEventListener('click', calibrateColors);
 adjustGridBtn.addEventListener('click', startGridAdjust);
 
 function updateBoardModeBtnLabel() {
+  if (!boardModeBtn) return;
   boardModeBtn.textContent = boardMode ? '🧩 Placa real: LIGADA' : '🧩 Placa real: desligada';
   boardModeBtn.classList.toggle('is-off', !boardMode);
 }
 updateBoardModeBtnLabel();
-boardModeBtn.addEventListener('click', () => {
+boardModeBtn?.addEventListener('click', () => {
   boardMode = !boardMode;
   try { localStorage.setItem(BOARD_MODE_KEY, boardMode ? '1' : '0'); } catch { /* ok */ }
   updateBoardModeBtnLabel();
